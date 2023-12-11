@@ -106,47 +106,24 @@ fn searchGearPartNumbers(curr: []const u8, prev: ?[]const u8, next: ?[]const u8,
         parts_count += 1;
     }
 
-    // check above and below, in case the gear appears in the **middle** of the line
-    if (index > 0 and index + 1 < curr.len) {
-        inline for (.{ prev, next }) |l| {
-            if (l) |line| {
-                const area = line[index - 1 .. index + 2];
-                // two parts connected in the same line
-                if (std.ascii.isDigit(area[0]) and !std.ascii.isDigit(area[1]) and std.ascii.isDigit(area[2])) {
-                    if (parts_count > 0) return null; // two many connected parts
-                    a = expand(line, index - 1, index);
-                    b = expand(line, index + 1, index + 2);
-                    parts_count += 2;
-                } else {
-                    // single part connected
-                    for (index - 1..index + 2) |i| {
-                        if (std.ascii.isDigit(line[i])) {
-                            if (parts_count == 2) return null; // two many connected parts
-                            const num = expand(line, i, i + 1);
-                            if (parts_count == 0) a = num else b = num;
-                            parts_count += 1;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // check avove and below, in case the gear appears in the beginning or end of the line
-    else if (index == 0 or index + 1 == curr.len) {
-        const begin = index -| 1;
-        const end = if (index + 1 == curr.len) curr.len else index + 2;
-        inline for (.{ prev, next }) |l| {
-            if (l) |line| {
-                for (begin..end) |i| {
-                    if (std.ascii.isDigit(line[i])) {
+    const begin = index -| 1;
+    const end = if (index + 1 == curr.len) curr.len else index + 2;
+    inline for (.{ prev, next }) |l| {
+        if (l) |line| {
+            // std.debug.print("searching for parts in: {s}\n", .{line[begin..end]});
+            var prev_char_was_digit = false;
+            for (begin..end) |i| {
+                if (std.ascii.isDigit(line[i])) {
+                    if (!prev_char_was_digit) {
                         if (parts_count == 2) return null; // two many connected parts
                         const num = expand(line, i, i + 1);
                         if (parts_count == 0) a = num else b = num;
                         parts_count += 1;
-                        break;
+                        // std.debug.print("part {d} is connected!\n", .{num});
                     }
+                    prev_char_was_digit = true;
+                } else {
+                    prev_char_was_digit = false;
                 }
             }
         }
