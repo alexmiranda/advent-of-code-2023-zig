@@ -23,6 +23,26 @@ fn sumOfPartNumbers(s: []const u8) usize {
     return sum;
 }
 
+fn sumOfGearRatios(s: []const u8) usize {
+    var sum: usize = 0;
+    const width = std.mem.indexOfScalar(u8, s, '\n').? + 1;
+    const rows_count = s.len / width;
+    for (0..rows_count, 1..rows_count + 1) |curr_idx, next_idx| {
+        const prev: ?[]const u8 = if (curr_idx > 0) s[(curr_idx - 1) * width .. (curr_idx - 1) * width + width - 1] else null;
+        const curr: []const u8 = s[curr_idx * width .. curr_idx * width + width - 1];
+        const next: ?[]const u8 = if (next_idx < rows_count) s[next_idx * width .. next_idx * width + width - 1] else null;
+        for (0..width - 1) |i| {
+            if (curr[i] != '*') continue;
+            if (searchGearPartNumbers(curr, prev, next, i)) |parts| {
+                const gear_ratio = parts.@"0" * parts.@"1";
+                // std.debug.print("{d}:{d} => {d} * {d} = {d}\n", .{ curr_idx + 1, i + 1, parts.@"0", parts.@"1", gear_ratio });
+                sum += gear_ratio;
+            }
+        }
+    }
+    return sum;
+}
+
 fn hasAdjacentSymbol(s: []const u8, width: usize, start: usize, len: usize) bool {
     // check left position
     if (start > 0) {
@@ -69,6 +89,96 @@ fn hasAdjacentSymbol(s: []const u8, width: usize, start: usize, len: usize) bool
     return false;
 }
 
+fn searchGearPartNumbers(curr: []const u8, prev: ?[]const u8, next: ?[]const u8, index: usize) ?struct { usize, usize } {
+    var a: usize = undefined;
+    var b: usize = undefined;
+    var parts_count: usize = 0;
+    // check if there is a part connected to the left
+    if (index > 0 and std.ascii.isDigit(curr[index - 1])) {
+        a = expand(curr, index - 1, index);
+        parts_count += 1;
+    }
+
+    // check if there is a part connected to the right
+    if (index + 1 < curr.len and std.ascii.isDigit(curr[index + 1])) {
+        const num = expand(curr, index + 1, index + 2);
+        if (parts_count == 0) a = num else b = num;
+        parts_count += 1;
+    }
+
+    // check above and below, in case the gear appears in the **middle** of the line
+    if (index > 0 and index + 1 < curr.len) {
+        inline for (.{ prev, next }) |l| {
+            if (l) |line| {
+                const area = line[index - 1 .. index + 2];
+                // two parts connected in the same line
+                if (std.ascii.isDigit(area[0]) and !std.ascii.isDigit(area[1]) and std.ascii.isDigit(area[2])) {
+                    if (parts_count > 0) return null; // two many connected parts
+                    a = expand(line, index - 1, index);
+                    b = expand(line, index + 1, index + 2);
+                    parts_count += 2;
+                } else {
+                    // single part connected
+                    for (index - 1..index + 2) |i| {
+                        if (std.ascii.isDigit(line[i])) {
+                            if (parts_count == 2) return null; // two many connected parts
+                            const num = expand(line, i, i + 1);
+                            if (parts_count == 0) a = num else b = num;
+                            parts_count += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // check avove and below, in case the gear appears in the beginning or end of the line
+    else if (index == 0 or index + 1 == curr.len) {
+        const begin = index -| 1;
+        const end = if (index + 1 == curr.len) curr.len else index + 2;
+        inline for (.{ prev, next }) |l| {
+            if (l) |line| {
+                for (begin..end) |i| {
+                    if (std.ascii.isDigit(line[i])) {
+                        if (parts_count == 2) return null; // two many connected parts
+                        const num = expand(line, i, i + 1);
+                        if (parts_count == 0) a = num else b = num;
+                        parts_count += 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (parts_count == 2) {
+        return .{ a, b };
+    }
+
+    return null;
+}
+
+fn expand(line: []const u8, begin: usize, end: usize) usize {
+    const slide_start: usize = blk: {
+        var slide: usize = begin;
+        break :blk while (slide > 0) : (slide -= 1) {
+            if (!std.ascii.isDigit(line[slide - 1])) {
+                break slide;
+            }
+        } else slide;
+    };
+    const slide_end: usize = blk: {
+        var slide: usize = end;
+        break :blk while (slide < line.len) : (slide += 1) {
+            if (!std.ascii.isDigit(line[slide])) {
+                break slide;
+            }
+        } else slide;
+    };
+    return std.fmt.parseInt(usize, line[slide_start..slide_end], 10) catch unreachable;
+}
+
 test "example - part 1" {
     const sum_of_part_numbers = sumOfPartNumbers(example);
     try std.testing.expectEqual(@as(usize, 4361), sum_of_part_numbers);
@@ -77,4 +187,14 @@ test "example - part 1" {
 test "input - part 1" {
     const sum_of_part_numbers = sumOfPartNumbers(input);
     try std.testing.expectEqual(@as(usize, 543867), sum_of_part_numbers);
+}
+
+test "example - part 2" {
+    const sum_gear_ratios = sumOfGearRatios(example);
+    try std.testing.expectEqual(@as(usize, 467835), sum_gear_ratios);
+}
+
+test "input - part 2" {
+    const sum_gear_ratios = sumOfGearRatios(input);
+    try std.testing.expectEqual(@as(usize, 79613331), sum_gear_ratios);
 }
