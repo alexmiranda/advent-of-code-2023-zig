@@ -9,24 +9,26 @@ fn calculatePoints(s: []const u8) usize {
     var numbers_you_have = IntSet.initEmpty();
     var it = std.mem.tokenizeAny(u8, s, ":|\n");
     while (it.next()) |_| {
-        winning_numbers.mask = 0;
-        var winning_numbers_it = std.mem.tokenizeScalar(u8, it.next().?, ' ');
-        while (winning_numbers_it.next()) |num| {
-            winning_numbers.set(std.fmt.parseInt(usize, num, 10) catch unreachable);
-        }
-
-        numbers_you_have.mask = 0;
-        var numbers_you_have_it = std.mem.tokenizeScalar(u8, it.next().?, ' ');
-        while (numbers_you_have_it.next()) |num| {
-            numbers_you_have.set(std.fmt.parseInt(usize, num, 10) catch unreachable);
-        }
-
-        numbers_you_have.setIntersection(winning_numbers);
-        const count = numbers_you_have.count();
-        const scratchcard_points = if (count == 0) 0 else std.math.pow(usize, 2, count - 1);
+        const scratchcard_points = calculateScore(&winning_numbers, it.next().?, &numbers_you_have, it.next().?);
         total_points += scratchcard_points;
     }
     return total_points;
+}
+
+fn calculateScore(winning_numbers: *IntSet, lhs: []const u8, numbers_you_have: *IntSet, rhs: []const u8) usize {
+    readNumbersInto(lhs, winning_numbers);
+    readNumbersInto(rhs, numbers_you_have);
+    numbers_you_have.setIntersection(winning_numbers.*);
+    const count = numbers_you_have.count();
+    return if (count == 0) 0 else std.math.pow(usize, 2, count - 1);
+}
+
+fn readNumbersInto(s: []const u8, set: *IntSet) void {
+    set.mask = 0;
+    var it = std.mem.tokenizeScalar(u8, s, ' ');
+    while (it.next()) |num| {
+        set.set(std.fmt.parseInt(usize, num, 10) catch unreachable);
+    }
 }
 
 test "example - part 1" {
