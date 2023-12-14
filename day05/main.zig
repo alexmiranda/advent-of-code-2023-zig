@@ -1,5 +1,6 @@
 const std = @import("std");
 const example = @embedFile("example.txt");
+const example_test = @embedFile("example_test.txt");
 const input = @embedFile("input.txt");
 
 const Mapping = struct {
@@ -25,6 +26,33 @@ fn lowestLocationNumber(allocator: std.mem.Allocator, s: []const u8) !u32 {
     for (seeds) |seed| {
         const location = solve(&mappings, seed);
         lowestLocation = @min(lowestLocation, location);
+    }
+
+    return lowestLocation;
+}
+
+fn lowestLocationNumberRange(allocator: std.mem.Allocator, s: []const u8) !u32 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var arena_allocator = arena.allocator();
+
+    var sections = std.mem.splitSequence(u8, s, "\n\n");
+    var seeds = try parseSeeds(arena_allocator, sections.next().?);
+
+    var mappings: [7][]Mapping = undefined;
+    for (0..mappings.len) |i| {
+        mappings[i] = try parseMap(arena_allocator, sections.next().?);
+    }
+
+    var lowestLocation: u32 = std.math.maxInt(u32);
+    var i: usize = 0;
+    while (i < seeds.len) : (i += 2) {
+        for (seeds[i]..seeds[i] + seeds[i + 1]) |seed_id| {
+            const x: u32 = @truncate(seed_id);
+            const location = solve(&mappings, x);
+            // std.debug.print("seed={d} | location={d}\n", .{ x, location });
+            lowestLocation = @min(lowestLocation, location);
+        }
     }
 
     return lowestLocation;
@@ -85,7 +113,7 @@ fn solve(mappings: [][]Mapping, src: u32) u32 {
         fn orderByInRange(ctx: void, v: u32, mapping: Mapping) std.math.Order {
             _ = ctx;
             if (v >= mapping.src_start) {
-                if (v - mapping.src_start <= mapping.rng_length) {
+                if (v - mapping.src_start < mapping.rng_length) {
                     return .eq;
                 }
                 return .gt;
@@ -96,9 +124,11 @@ fn solve(mappings: [][]Mapping, src: u32) u32 {
 
     var value = src;
     for (mappings) |mapping| {
+        // const value_before = value;
         if (std.sort.binarySearch(Mapping, value, mapping, {}, S.orderByInRange)) |index| {
             value = mapping[index].dst_start + (value - mapping[index].src_start);
         }
+        // std.debug.print("before={d} after={d}\n", .{ value_before, value });
     }
 
     return value;
@@ -112,4 +142,19 @@ test "example - part 1" {
 test "input - part 1" {
     const lowest_location = try lowestLocationNumber(std.testing.allocator, input);
     try std.testing.expectEqual(@as(u32, 403695602), lowest_location);
+}
+
+test "example - part 2" {
+    const lowest_location = try lowestLocationNumberRange(std.testing.allocator, example);
+    try std.testing.expectEqual(@as(u32, 46), lowest_location);
+}
+
+test "example test - part 2" {
+    const lowest_location = try lowestLocationNumberRange(std.testing.allocator, example_test);
+    try std.testing.expectEqual(@as(u32, 46), lowest_location);
+}
+
+test "input - part 2" {
+    const lowest_location = try lowestLocationNumberRange(std.testing.allocator, input);
+    try std.testing.expectEqual(@as(u32, 219529182), lowest_location);
 }
