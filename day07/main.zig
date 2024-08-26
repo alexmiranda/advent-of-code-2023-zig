@@ -1,0 +1,128 @@
+const std = @import("std");
+const example = @embedFile("example.txt");
+const input = @embedFile("input.txt");
+const print = std.debug.print;
+
+const series = "23456789TJQKA";
+const HandType = enum(u3) {
+    five_of_a_kind = 7,
+    four_of_a_kind = 6,
+    full_house = 5,
+    three_of_a_kind = 4,
+    two_pair = 3,
+    one_pair = 2,
+    high_card = 1,
+    not_specified = 0,
+
+    const masks = blk: {
+        var result: [5]u20 = undefined;
+        for (0..5) |i| {
+            const pad = 4 * (4 - i);
+            result[i] = 0b1111 << pad;
+        }
+        break :blk result;
+    };
+
+    fn compute(h: u32) HandType {
+        var hand = h;
+        var a: u8 = 0;
+        var b: u8 = 0;
+        for (masks, 0..) |m, i| {
+            const padl: u5 = @intCast(4 * (4 - i));
+            const lhs = (hand & m) >> padl;
+            if (lhs == 0) continue;
+
+            hand &= ~m;
+            var count: u8 = 1;
+            for (masks[i + 1 ..], i + 1..) |mm, j| {
+                const padr: u5 = @intCast(4 * (4 - j));
+                const rhs = (hand & mm) >> padr;
+                if (rhs == 0) continue;
+                if (lhs == rhs) {
+                    count += 1;
+                    hand &= ~mm;
+                }
+            }
+
+            if (count >= a) {
+                b = a;
+                a = count;
+            } else if (count > b) {
+                b = count;
+            }
+
+            if (hand == 0) break;
+        }
+
+        if (a == 5) {
+            return .five_of_a_kind;
+        } else if (a == 4) {
+            return .four_of_a_kind;
+        } else if (a == 3 and b == 2) {
+            return .full_house;
+        } else if (a == 3) {
+            return .three_of_a_kind;
+        } else if (a == 2 and b == 2) {
+            return .two_pair;
+        } else if (a == 2) {
+            return .one_pair;
+        } else {
+            return .high_card;
+        }
+    }
+};
+
+const Round = struct {
+    hand: u32,
+    bid: u16,
+    type: HandType = .not_specified,
+
+    fn lessThan(ctx: void, lhs: Round, rhs: Round) bool {
+        _ = ctx;
+        if (@intFromEnum(lhs.type) < @intFromEnum(rhs.type)) {
+            return true;
+        } else if (@intFromEnum(lhs.type) == @intFromEnum(rhs.type)) {
+            return lhs.hand < rhs.hand;
+        }
+        return false;
+    }
+};
+
+fn totalWinnings(rounds: []Round) u64 {
+    std.sort.block(Round, rounds, {}, Round.lessThan);
+    var total_winnings: u64 = 0;
+    for (rounds, 1..) |round, i| {
+        total_winnings += i * round.bid;
+    }
+    return total_winnings;
+}
+
+fn parseInput(s: []const u8, dest: []Round) !void {
+    var slide: usize = 0;
+    var it = std.mem.tokenizeScalar(u8, s, '\n');
+    while (it.next()) |line| : (slide += 1) {
+        var hand: u32 = 0;
+        for (line[0..5]) |c| {
+            const card_strength: u4 = @intCast(std.mem.indexOfScalar(u8, series, c).? + 2); // 2..13
+            hand <<= 4;
+            hand |= card_strength;
+            // print("card_strength: {c} ({d}) hand={b:0>20}\n", .{ series[card_strength - 2], card_strength, hand });
+        }
+        const bid = try std.fmt.parseUnsigned(u16, line[6..], 10);
+        dest[slide] = .{ .hand = hand, .bid = bid, .type = HandType.compute(hand) };
+    }
+}
+
+test "example - part 1" {
+    var rounds: [5]Round = undefined;
+    try parseInput(example, &rounds);
+    const total_winnings = totalWinnings(&rounds);
+    try std.testing.expectEqual(@as(u64, 6440), total_winnings);
+}
+
+test "input - part 1" {
+    var rounds: [1000]Round = undefined;
+    try parseInput(input, &rounds);
+    const total_winnings = totalWinnings(&rounds);
+    try std.testing.expectEqual(@as(u64, 253910319), total_winnings);
+}
