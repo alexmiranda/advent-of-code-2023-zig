@@ -20,10 +20,7 @@ const HandType = enum(u3) {
 
     const masks = blk: {
         var result: [5]u20 = undefined;
-        for (0..5) |i| {
-            const pad = 4 * (4 - i);
-            result[i] = 0b1111 << pad;
-        }
+        for (&result, 0..) |*p, i| p.* = 0b1111 << 4 * (4 - i);
         break :blk result;
     };
 
