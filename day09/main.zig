@@ -24,41 +24,35 @@ const StepsIterator = struct {
     }
 };
 
-fn solvePart1(allocator: std.mem.Allocator, s: []const u8) !i32 {
+fn solve(s: []const u8, predictFn: *const fn (std.mem.Allocator, []i32) i32, comptime max_items_per_step: usize) !i32 {
+    // by knowing the maximum number of items per line, we can calculate the amount of bytes that we need
+    // by calculating the triangular number and multiplying it by the number of bytes for each item
+    const max_capacity = @sizeOf(i32) / @sizeOf(u8) * (max_items_per_step * (max_items_per_step + 1) / 2);
+    var buf: [max_capacity]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
+    var childAllocator = fba.allocator();
+
     var it = StepsIterator{
-        .allocator = allocator,
+        .allocator = childAllocator,
         .lineIterator = std.mem.tokenizeScalar(u8, s, '\n'),
     };
 
     var sum: i32 = 0;
     while (try it.next()) |step| {
-        defer allocator.free(step);
-        sum += try predictNext(allocator, step);
+        defer childAllocator.free(step);
+        sum += predictFn(childAllocator, step);
     }
 
     return sum;
 }
 
-fn solvePart2(allocator: std.mem.Allocator, s: []const u8) !i32 {
-    var it = StepsIterator{
-        .allocator = allocator,
-        .lineIterator = std.mem.tokenizeScalar(u8, s, '\n'),
-    };
-
-    var sum: i32 = 0;
-    while (try it.next()) |step| {
-        defer allocator.free(step);
-        sum += try predictBackwards(allocator, step);
-    }
-
-    return sum;
-}
-
-fn predictNext(allocator: std.mem.Allocator, step: []i32) !i32 {
+fn predictNext(allocator: std.mem.Allocator, step: []i32) i32 {
     if (step.len == 1 or std.mem.allEqual(i32, step, 0)) {
         return 0;
     }
-    const nextStep = try allocator.alloc(i32, step.len - 1);
+
+    // ok because we always pass down a fixed buffer allocator with sufficient memory
+    const nextStep = allocator.alloc(i32, step.len - 1) catch unreachable;
     defer allocator.free(nextStep);
 
     var slide: usize = 0;
@@ -67,16 +61,18 @@ fn predictNext(allocator: std.mem.Allocator, step: []i32) !i32 {
         slide += 1;
     }
 
-    const predicted = try predictNext(allocator, nextStep);
+    const predicted = predictNext(allocator, nextStep);
     // print("predicted: {d}\n", .{predicted});
     return step[step.len - 1] + predicted;
 }
 
-fn predictBackwards(allocator: std.mem.Allocator, step: []i32) !i32 {
+fn predictBackwards(allocator: std.mem.Allocator, step: []i32) i32 {
     if (step.len == 1 or std.mem.allEqual(i32, step, 0)) {
         return 0;
     }
-    const nextStep = try allocator.alloc(i32, step.len - 1);
+
+    // ok because we always pass down a fixed buffer allocator with sufficient memory
+    const nextStep = allocator.alloc(i32, step.len - 1) catch unreachable;
     defer allocator.free(nextStep);
 
     var slide: usize = 0;
@@ -85,7 +81,7 @@ fn predictBackwards(allocator: std.mem.Allocator, step: []i32) !i32 {
         slide += 1;
     }
 
-    const predicted = try predictBackwards(allocator, nextStep);
+    const predicted = predictBackwards(allocator, nextStep);
     // print("predicted: {d}\n", .{predicted});
     return step[0] - predicted;
 }
@@ -99,21 +95,21 @@ fn printStep(step: []i32) void {
 }
 
 test "example - part 1" {
-    const solution = try solvePart1(std.testing.allocator, example);
+    const solution = try solve(example, predictNext, 6);
     try std.testing.expectEqual(@as(i32, 114), solution);
 }
 
 test "input - part 1" {
-    const solution = try solvePart1(std.testing.allocator, input);
+    const solution = try solve(input, predictNext, 21);
     try std.testing.expectEqual(@as(i32, 1696140818), solution);
 }
 
 test "example - part 2" {
-    const solution = try solvePart2(std.testing.allocator, example);
+    const solution = try solve(example, predictBackwards, 6);
     try std.testing.expectEqual(@as(i32, 2), solution);
 }
 
 test "input - part 2" {
-    const solution = try solvePart2(std.testing.allocator, input);
+    const solution = try solve(input, predictBackwards, 21);
     try std.testing.expectEqual(@as(i32, 1152), solution);
 }
