@@ -24,7 +24,7 @@ const StepsIterator = struct {
     }
 };
 
-fn solve(allocator: std.mem.Allocator, s: []const u8) !i32 {
+fn solvePart1(allocator: std.mem.Allocator, s: []const u8) !i32 {
     var it = StepsIterator{
         .allocator = allocator,
         .lineIterator = std.mem.tokenizeScalar(u8, s, '\n'),
@@ -34,6 +34,21 @@ fn solve(allocator: std.mem.Allocator, s: []const u8) !i32 {
     while (try it.next()) |step| {
         defer allocator.free(step);
         sum += try predictNext(allocator, step);
+    }
+
+    return sum;
+}
+
+fn solvePart2(allocator: std.mem.Allocator, s: []const u8) !i32 {
+    var it = StepsIterator{
+        .allocator = allocator,
+        .lineIterator = std.mem.tokenizeScalar(u8, s, '\n'),
+    };
+
+    var sum: i32 = 0;
+    while (try it.next()) |step| {
+        defer allocator.free(step);
+        sum += try predictBackwards(allocator, step);
     }
 
     return sum;
@@ -57,6 +72,24 @@ fn predictNext(allocator: std.mem.Allocator, step: []i32) !i32 {
     return step[step.len - 1] + predicted;
 }
 
+fn predictBackwards(allocator: std.mem.Allocator, step: []i32) !i32 {
+    if (step.len == 1 or std.mem.allEqual(i32, step, 0)) {
+        return 0;
+    }
+    const nextStep = try allocator.alloc(i32, step.len - 1);
+    defer allocator.free(nextStep);
+
+    var slide: usize = 0;
+    for (step[0 .. step.len - 1], step[1..]) |a, b| {
+        nextStep[slide] = b - a;
+        slide += 1;
+    }
+
+    const predicted = try predictBackwards(allocator, nextStep);
+    // print("predicted: {d}\n", .{predicted});
+    return step[0] - predicted;
+}
+
 fn printStep(step: []i32) void {
     print("{d}", .{step[0]});
     for (step[1..]) |value| {
@@ -66,11 +99,21 @@ fn printStep(step: []i32) void {
 }
 
 test "example - part 1" {
-    const solution = try solve(std.testing.allocator, example);
+    const solution = try solvePart1(std.testing.allocator, example);
     try std.testing.expectEqual(@as(i32, 114), solution);
 }
 
 test "input - part 1" {
-    const solution = try solve(std.testing.allocator, input);
+    const solution = try solvePart1(std.testing.allocator, input);
     try std.testing.expectEqual(@as(i32, 1696140818), solution);
+}
+
+test "example - part 2" {
+    const solution = try solvePart2(std.testing.allocator, example);
+    try std.testing.expectEqual(@as(i32, 2), solution);
+}
+
+test "input - part 2" {
+    const solution = try solvePart2(std.testing.allocator, input);
+    try std.testing.expectEqual(@as(i32, 1152), solution);
 }
