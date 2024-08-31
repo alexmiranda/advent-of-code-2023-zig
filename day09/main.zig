@@ -37,7 +37,7 @@ fn Solver(comptime T: type, comptime max_items_per_step: usize) type {
             const max_capacity = @sizeOf(T) / @sizeOf(u8) * (max_items_per_step * (max_items_per_step + 1) / 2);
             var buf: [max_capacity]u8 = undefined;
             var fba = std.heap.FixedBufferAllocator.init(&buf);
-            var allocator = fba.allocator();
+            const allocator = fba.allocator();
 
             var it = StepsIterator{
                 .allocator = allocator,
@@ -81,23 +81,23 @@ fn Solver(comptime T: type, comptime max_items_per_step: usize) type {
 test "example - part 1" {
     const ExampleSolver = Solver(u8, 6);
     const solution = try ExampleSolver.solve(example, .part_1);
-    try std.testing.expectEqual(@as(u8, 114), solution);
+    try std.testing.expectEqual(114, solution);
 }
 
 test "input - part 1" {
     const InputSolver = Solver(i32, 21);
     const solution = try InputSolver.solve(input, .part_1);
-    try std.testing.expectEqual(@as(i32, 1696140818), solution);
+    try std.testing.expectEqual(1696140818, solution);
 }
 
 test "example - part 2" {
     const ExampleSolver = Solver(i8, 6);
     const solution = try ExampleSolver.solve(example, .part_2);
-    try std.testing.expectEqual(@as(i8, 2), solution);
+    try std.testing.expectEqual(2, solution);
 }
 
 test "input - part 2" {
     const InputSolver = Solver(i32, 21);
     const solution = try InputSolver.solve(input, .part_2);
-    try std.testing.expectEqual(@as(i32, 1152), solution);
+    try std.testing.expectEqual(1152, solution);
 }

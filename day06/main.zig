@@ -64,7 +64,7 @@ test "example - part 1" {
     for (races.slice()) |race| {
         result *= race.computeNumberOfWins();
     }
-    try std.testing.expectEqual(@as(i32, 288), result);
+    try std.testing.expectEqual(288, result);
 }
 
 test "input - part 1" {
@@ -73,15 +73,15 @@ test "input - part 1" {
     for (races.slice()) |race| {
         result *= race.computeNumberOfWins();
     }
-    try std.testing.expectEqual(@as(i32, 393120), result);
+    try std.testing.expectEqual(393120, result);
 }
 
 test "example - part 2" {
     const race = try parseSingleRace(std.testing.allocator, example);
-    try std.testing.expectEqual(@as(i32, 71503), race.computeNumberOfWins());
+    try std.testing.expectEqual(71503, race.computeNumberOfWins());
 }
 
 test "input - part 2" {
     const race = try parseSingleRace(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(i32, 36872656), race.computeNumberOfWins());
+    try std.testing.expectEqual(36872656, race.computeNumberOfWins());
 }

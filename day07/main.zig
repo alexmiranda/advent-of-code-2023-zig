@@ -129,26 +129,26 @@ test "example - part 1" {
     var rounds: [5]Round = undefined;
     try parseInput(example, &rounds, false);
     const total_winnings = totalWinnings(&rounds);
-    try std.testing.expectEqual(@as(u64, 6440), total_winnings);
+    try std.testing.expectEqual(6440, total_winnings);
 }
 
 test "input - part 1" {
     var rounds: [1000]Round = undefined;
     try parseInput(input, &rounds, false);
     const total_winnings = totalWinnings(&rounds);
-    try std.testing.expectEqual(@as(u64, 253910319), total_winnings);
+    try std.testing.expectEqual(253910319, total_winnings);
 }
 
 test "example - part 2" {
     var rounds: [5]Round = undefined;
     try parseInput(example, &rounds, true);
     const total_winnings = totalWinnings(&rounds);
-    try std.testing.expectEqual(@as(u64, 5905), total_winnings);
+    try std.testing.expectEqual(5905, total_winnings);
 }
 
 test "input - part 2" {
     var rounds: [1000]Round = undefined;
     try parseInput(input, &rounds, true);
     const total_winnings = totalWinnings(&rounds);
-    try std.testing.expectEqual(@as(u64, 254083736), total_winnings);
+    try std.testing.expectEqual(254083736, total_winnings);
 }

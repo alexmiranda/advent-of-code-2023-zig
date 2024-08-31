@@ -158,20 +158,20 @@ fn expand(line: []const u8, begin: usize, end: usize) usize {
 
 test "example - part 1" {
     const sum_of_part_numbers = sumOfPartNumbers(example);
-    try std.testing.expectEqual(@as(usize, 4361), sum_of_part_numbers);
+    try std.testing.expectEqual(4361, sum_of_part_numbers);
 }
 
 test "input - part 1" {
     const sum_of_part_numbers = sumOfPartNumbers(input);
-    try std.testing.expectEqual(@as(usize, 543867), sum_of_part_numbers);
+    try std.testing.expectEqual(543867, sum_of_part_numbers);
 }
 
 test "example - part 2" {
     const sum_gear_ratios = sumOfGearRatios(example);
-    try std.testing.expectEqual(@as(usize, 467835), sum_gear_ratios);
+    try std.testing.expectEqual(467835, sum_gear_ratios);
 }
 
 test "input - part 2" {
     const sum_gear_ratios = sumOfGearRatios(input);
-    try std.testing.expectEqual(@as(usize, 79613331), sum_gear_ratios);
+    try std.testing.expectEqual(79613331, sum_gear_ratios);
 }

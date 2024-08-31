@@ -12,10 +12,10 @@ const Mapping = struct {
 fn lowestLocationNumber(allocator: std.mem.Allocator, s: []const u8) !u64 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    var arena_allocator = arena.allocator();
+    const arena_allocator = arena.allocator();
 
     var sections = std.mem.splitSequence(u8, s, "\n\n");
-    var seeds = try parseSeeds(arena_allocator, sections.next().?);
+    const seeds = try parseSeeds(arena_allocator, sections.next().?);
 
     var mappings: [7][]Mapping = undefined;
     for (0..mappings.len) |i| {
@@ -34,7 +34,7 @@ fn lowestLocationNumber(allocator: std.mem.Allocator, s: []const u8) !u64 {
 fn lowestLocationNumberRange(allocator: std.mem.Allocator, s: []const u8) !u64 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    var arena_allocator = arena.allocator();
+    const arena_allocator = arena.allocator();
 
     var sections = std.mem.splitSequence(u8, s, "\n\n");
 
@@ -162,7 +162,7 @@ fn solveRange(allocator: std.mem.Allocator, mappings: [][]Mapping) !u64 {
 
     // push all the seeds ranges to the queue
     for (mappings[0]) |range| {
-        var node = try allocator.create(Node);
+        const node = try allocator.create(Node);
         node.* = Node{ .data = range };
         unmapped.append(node);
     }
@@ -241,25 +241,25 @@ fn solveRange(allocator: std.mem.Allocator, mappings: [][]Mapping) !u64 {
 
 test "example - part 1" {
     const lowest_location = try lowestLocationNumber(std.testing.allocator, example);
-    try std.testing.expectEqual(@as(u64, 35), lowest_location);
+    try std.testing.expectEqual(35, lowest_location);
 }
 
 test "input - part 1" {
     const lowest_location = try lowestLocationNumber(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(u64, 403695602), lowest_location);
+    try std.testing.expectEqual(403695602, lowest_location);
 }
 
 test "example - part 2" {
     const lowest_location = try lowestLocationNumberRange(std.testing.allocator, example);
-    try std.testing.expectEqual(@as(u64, 46), lowest_location);
+    try std.testing.expectEqual(46, lowest_location);
 }
 
 test "example test - part 2" {
     const lowest_location = try lowestLocationNumberRange(std.testing.allocator, example_test);
-    try std.testing.expectEqual(@as(u64, 46), lowest_location);
+    try std.testing.expectEqual(46, lowest_location);
 }
 
 test "input - part 2" {
     const lowest_location = try lowestLocationNumberRange(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(u64, 219529182), lowest_location);
+    try std.testing.expectEqual(219529182, lowest_location);
 }

@@ -56,7 +56,7 @@ const Network = struct {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
-        var arena_allocator = arena.allocator();
+        const arena_allocator = arena.allocator();
         const Cycle = struct {
             distance_to_first: u64 = 0,
             cycle_length: ?usize = null,
@@ -98,7 +98,7 @@ const Network = struct {
             while (it.next()) |entry| {
                 const key = entry.key_ptr.*;
                 if (key[2] == 'A') {
-                    var cycles = std.StringHashMap(Cycle).init(arena_allocator);
+                    const cycles = std.StringHashMap(Cycle).init(arena_allocator);
                     list.appendAssumeCapacity(.{ .start_at = key, .curr = key, .node = entry.value_ptr, .cycles = cycles });
                 }
             }
@@ -168,33 +168,33 @@ test "example 1 - part 1" {
     var network = try Network.init(std.testing.allocator, example1);
     defer network.deinit();
 
-    try std.testing.expectEqual(@as(u32, 2), network.navigate());
+    try std.testing.expectEqual(2, network.navigate());
 }
 
 test "example 2 - part 1" {
     var network = try Network.init(std.testing.allocator, example2);
     defer network.deinit();
 
-    try std.testing.expectEqual(@as(u32, 6), network.navigate());
+    try std.testing.expectEqual(6, network.navigate());
 }
 
 test "input - part 1" {
     var network = try Network.init(std.testing.allocator, input);
     defer network.deinit();
 
-    try std.testing.expectEqual(@as(u32, 16897), network.navigate());
+    try std.testing.expectEqual(16897, network.navigate());
 }
 
 test "example 3 - part 2" {
     var network = try Network.init(std.testing.allocator, example3);
     defer network.deinit();
 
-    try std.testing.expectEqual(@as(u64, 6), try network.navigateMultiple());
+    try std.testing.expectEqual(6, try network.navigateMultiple());
 }
 
 test "input - part 2" {
     var network = try Network.init(std.testing.allocator, input);
     defer network.deinit();
 
-    try std.testing.expectEqual(@as(u64, 16563603485021), try network.navigateMultiple());
+    try std.testing.expectEqual(16563603485021, try network.navigateMultiple());
 }

@@ -64,7 +64,7 @@ fn readNumbersInto(s: []const u8, set: *IntSet) void {
 
 test "example - part 1" {
     const points = calculatePoints(example);
-    try std.testing.expectEqual(@as(usize, 13), points);
+    try std.testing.expectEqual(13, points);
 }
 
 test "input - part 1" {
@@ -74,10 +74,10 @@ test "input - part 1" {
 
 test "example - part 2" {
     const total_scratchcards = try calculateTotalScratchcards(std.testing.allocator, example);
-    try std.testing.expectEqual(@as(usize, 30), total_scratchcards);
+    try std.testing.expectEqual(30, total_scratchcards);
 }
 
 test "input - part 2" {
     const total_scratchcards = try calculateTotalScratchcards(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(usize, 8467762), total_scratchcards);
+    try std.testing.expectEqual(8467762, total_scratchcards);
 }

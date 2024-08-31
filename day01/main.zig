@@ -57,17 +57,17 @@ fn addCalibrationValuesRevised(s: []const u8) usize {
 }
 
 test "example - part 1" {
-    try std.testing.expectEqual(@as(usize, 142), addCalibrationValues(example1));
+    try std.testing.expectEqual(142, addCalibrationValues(example1));
 }
 
 test "input - part 1" {
-    try std.testing.expectEqual(@as(usize, 56397), addCalibrationValues(input));
+    try std.testing.expectEqual(56397, addCalibrationValues(input));
 }
 
 test "example - part 2" {
-    try std.testing.expectEqual(@as(usize, 281), addCalibrationValuesRevised(example2));
+    try std.testing.expectEqual(281, addCalibrationValuesRevised(example2));
 }
 
 test "input - part 2" {
-    try std.testing.expectEqual(@as(usize, 55701), addCalibrationValuesRevised(input));
+    try std.testing.expectEqual(55701, addCalibrationValuesRevised(input));
 }

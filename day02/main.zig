@@ -65,20 +65,20 @@ fn sumPowerOfSets(s: []const u8) !usize {
 
 test "example - part 1" {
     const possible_games = try countPossibleGames(example);
-    try std.testing.expectEqual(@as(usize, 8), possible_games);
+    try std.testing.expectEqual(8, possible_games);
 }
 
 test "input - part 1" {
     const possible_games = try countPossibleGames(input);
-    try std.testing.expectEqual(@as(usize, 2256), possible_games);
+    try std.testing.expectEqual(2256, possible_games);
 }
 
 test "example - part 2" {
     const sum_of_powers_of_sets = try sumPowerOfSets(example);
-    try std.testing.expectEqual(@as(usize, 2286), sum_of_powers_of_sets);
+    try std.testing.expectEqual(2286, sum_of_powers_of_sets);
 }
 
 test "input - part 2" {
     const sum_of_powers_of_sets = try sumPowerOfSets(input);
-    try std.testing.expectEqual(@as(usize, 0), sum_of_powers_of_sets);
+    try std.testing.expectEqual(74229, sum_of_powers_of_sets);
 }
