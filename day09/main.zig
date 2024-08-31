@@ -38,7 +38,6 @@ fn Solver(comptime T: type, comptime max_items_per_step: usize) type {
             var buf: [max_capacity]u8 = undefined;
             var fba = std.heap.FixedBufferAllocator.init(&buf);
             var allocator = fba.allocator();
-            // print("max_capacity: {d}\n", .{max_capacity});
 
             var it = StepsIterator{
                 .allocator = allocator,
@@ -47,35 +46,34 @@ fn Solver(comptime T: type, comptime max_items_per_step: usize) type {
 
             var sum: T = 0;
             while (try it.next()) |step| {
-                defer allocator.free(step);
-                sum += predict(allocator, step, part);
+                defer fba.reset(); // using reset is faster than freeing
+                sum += predict(allocator, 0, step, part);
             }
 
             return sum;
         }
 
-        fn predict(allocator: std.mem.Allocator, step: []T, comptime part: Part) T {
+        fn predict(allocator: std.mem.Allocator, acc: T, step: []T, comptime part: Part) T {
             if (step.len == 1 or std.mem.allEqual(T, step, 0)) {
-                return 0;
+                return acc;
             }
 
             // safe because we always pass down a fixed buffer allocator with sufficient memory
             const next_step = allocator.alloc(T, step.len - 1) catch unreachable;
-            defer allocator.free(next_step);
+
+            // no need to free here because we reset the fba on each iteration
+            // using defer prevents zig from correctly compiling this function with tail call optimisation
+            // defer allocator.free(next_step);
 
             var slide: usize = 0;
             for (step[0 .. step.len - 1], step[1..]) |a, b| {
-                next_step[slide] = b - a;
+                next_step[slide] = if (part == .part_1) b - a else a - b;
                 slide += 1;
             }
 
-            const predicted = predict(allocator, next_step, part);
-            // print("predicted: {d}\n", .{predicted});
-            if (part == .part_1) {
-                return step[step.len - 1] + predicted;
-            } else {
-                return step[0] - predicted;
-            }
+            // force the compiler to tail call
+            const acc_next = if (part == .part_1) step[step.len - 1] + acc else step[0] + acc;
+            return @call(.always_tail, predict, .{ allocator, acc_next, next_step, part });
         }
     };
 }
