@@ -1,10 +1,13 @@
 const std = @import("std");
 const print = std.debug.print;
-const sub = std.math.sub;
 const example1 = @embedFile("example1.txt");
 const example2 = @embedFile("example2.txt");
 const example3 = @embedFile("example3.txt");
 const example_two_loops = @embedFile("example_two_loops.txt");
+const example4 = @embedFile("example4.txt");
+const example5 = @embedFile("example5.txt");
+const example6 = @embedFile("example6.txt");
+const example_squeeze = @embedFile("example_squeeze.txt");
 const input = @embedFile("input.txt");
 
 const MazeError = error{
@@ -58,7 +61,7 @@ const Tile = enum {
             'J' => .northWest,
             '7' => .southWest,
             'F' => .southEast,
-            '.' => .ground,
+            '.', 'O', 'I' => .ground,
             'S' => .start,
             else => unreachable,
         };
@@ -129,15 +132,16 @@ const Coord = struct {
 
 const CoordContext = struct {
     width: usize,
+    const Self = @This();
 
-    pub fn hash(ctx: @This(), key: Coord) u64 {
+    pub fn hash(ctx: Self, key: Coord) u64 {
         // using a simple hash based on the coordinate indexes
         // so that we have a nice distributivity and cheap hash
         const h: u64 = @bitCast(key.y * ctx.width + key.x);
         return h;
     }
 
-    pub fn eql(ctx: @This(), lhs: Coord, rhs: Coord) bool {
+    pub fn eql(ctx: Self, lhs: Coord, rhs: Coord) bool {
         _ = ctx;
         return lhs.eql(rhs);
     }
@@ -166,7 +170,8 @@ const Maze = struct {
     width: usize,
     height: usize,
 
-    const navigableTiles = [_]Tile{ .northSouth, .eastWest, .northEast, .northWest, .southWest, .southEast };
+    const Self = @This();
+    const navigable_tiles = [_]Tile{ .northSouth, .eastWest, .northEast, .northWest, .southWest, .southEast };
 
     const Target = struct {
         coord: Coord,
@@ -174,7 +179,7 @@ const Maze = struct {
         exitDirection: Direction,
     };
 
-    fn init(allocator: std.mem.Allocator, s: []const u8) !Maze {
+    fn init(allocator: std.mem.Allocator, s: []const u8) !Self {
         const w = std.mem.indexOfScalar(u8, s, '\n').?;
         const h = s.len / (w + 1);
         // print("w: {d} h: {d}\n", .{ w, h });
@@ -211,19 +216,65 @@ const Maze = struct {
         self.allocator.free(self.data);
     }
 
-    fn farthestPointDistance(self: *@This()) usize {
+    fn farthestPointDistance(self: *Self) usize {
         var main_loop = self.findLongestLoop() catch return 0;
         defer main_loop.deinit();
         return std.math.divCeil(usize, main_loop.len, 2) catch 0;
     }
 
-    fn findLongestLoop(self: *@This()) !Loop {
+    fn countEnclosedTiles(self: *Self) !usize {
+        var main_loop = try self.findLongestLoop();
+        defer main_loop.deinit();
+        self.cleanUpOtherPipes(main_loop);
+
+        // breaking down the problem:
+        // we visit every tile, top to bottom, left to right
+        // at the beginning or end of each row we assume that any tile is not enclosed
+        // because the animal cannot squeeze between these tiles and the borders of the maze...
+        // so we need to look for tiles that are blocking from the north, in that row...
+        // if the tile has an exit to the north, we know that it's connected to another tile
+        // in the row counted before. Every time we see one, we flip the enclosed flag
+        // and if we find a ground tile while the it's supposed to be enclosed,
+        // then we count that ground tile as an enclosed one...
+        var count: usize = 0;
+        var enclosed = false;
+        for (self.data, 0..) |tile, i| {
+            const mod = i % self.width;
+            if (mod == 0 or mod == self.width - 1) enclosed = false;
+            switch (tile) {
+                .ground => {
+                    if (enclosed) count += 1;
+                },
+                .northSouth, .northEast, .northWest => {
+                    enclosed = !enclosed;
+                },
+                else => {},
+            }
+        }
+        return count;
+    }
+
+    fn cleanUpOtherPipes(self: *Self, main_loop: Loop) void {
+        // change the start title to its correct tile shape
+        self.tiles[self.start.y][self.start.x] = main_loop.start_tile;
+        const coords = main_loop.coords.?;
+
+        // all tiles that don't belong to the main loop are changed to ground tiles
+        for (self.data, 0..) |*tile, i| {
+            const x = i % self.width;
+            const y = i / self.width;
+            if (tile.* == .ground or coords.contains(.{ .x = x, .y = y })) continue;
+            tile.* = .ground;
+        }
+    }
+
+    fn findLongestLoop(self: *Self) !Loop {
         var main_loop = Loop{};
         errdefer main_loop.deinit();
 
         // we need to assume any navigable tile shape of the starting tile
         // to make sure there actually is a loop
-        inline for (navigableTiles) |assumed_start_tile| {
+        inline for (navigable_tiles) |assumed_start_tile| {
             // print("==== {} ====\n", .{assumed_start_tile});
             var set = CoordSet.initContext(self.allocator, .{ .width = self.width });
             errdefer set.deinit();
@@ -265,7 +316,7 @@ const Maze = struct {
         return main_loop;
     }
 
-    fn tryMove(self: *@This(), target: Target, startTile: Tile) ?Target {
+    fn tryMove(self: *Self, target: Target, startTile: Tile) ?Target {
         // check if it's possible to move east or west
         const x = switch (target.exitDirection) {
             .west => if (target.coord.x > 0) target.coord.x - 1 else return null,
@@ -302,6 +353,7 @@ const Maze = struct {
     }
 };
 
+// unused
 fn printRow(tiles: []Tile) void {
     for (tiles) |tile| {
         print("{c}", .{tile.toChar()});
@@ -349,4 +401,44 @@ test "input - part 1" {
 
     const result = maze.farthestPointDistance();
     try std.testing.expectEqual(6890, result);
+}
+
+test "example4 - part 2" {
+    var maze = try Maze.init(std.testing.allocator, example4);
+    defer maze.deinit();
+
+    const result = try maze.countEnclosedTiles();
+    try std.testing.expectEqual(4, result);
+}
+
+test "example squeeze - part 2" {
+    var maze = try Maze.init(std.testing.allocator, example_squeeze);
+    defer maze.deinit();
+
+    const result = try maze.countEnclosedTiles();
+    try std.testing.expectEqual(4, result);
+}
+
+test "example5 - part 2" {
+    var maze = try Maze.init(std.testing.allocator, example5);
+    defer maze.deinit();
+
+    const result = try maze.countEnclosedTiles();
+    try std.testing.expectEqual(8, result);
+}
+
+test "example6 - part 2" {
+    var maze = try Maze.init(std.testing.allocator, example6);
+    defer maze.deinit();
+
+    const result = try maze.countEnclosedTiles();
+    try std.testing.expectEqual(10, result);
+}
+
+test "input - part 2" {
+    var maze = try Maze.init(std.testing.allocator, input);
+    defer maze.deinit();
+
+    const result = try maze.countEnclosedTiles();
+    try std.testing.expectEqual(453, result);
 }
