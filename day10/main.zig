@@ -11,7 +11,7 @@ const example_squeeze = @embedFile("example_squeeze.txt");
 const input = @embedFile("input.txt");
 
 const MazeError = error{
-    tileDirectionMismatch,
+    TileDirectionMismatch,
 };
 
 const Direction = enum {
@@ -115,7 +115,7 @@ const Tile = enum {
     // returns the exit direction that doesn't match the direction used to enter the tile
     fn exitDirection(self: Tile, from: Direction) !?Direction {
         if (self.directions()) |dirs| {
-            return if (from == dirs[0]) dirs[1] else if (from == dirs[1]) dirs[0] else MazeError.tileDirectionMismatch;
+            return if (from == dirs[0]) dirs[1] else if (from == dirs[1]) dirs[0] else MazeError.TileDirectionMismatch;
         }
         return null;
     }
@@ -176,7 +176,7 @@ const Maze = struct {
     const Target = struct {
         coord: Coord,
         tile: Tile,
-        exitDirection: Direction,
+        exit_direction: Direction,
     };
 
     fn init(allocator: std.mem.Allocator, s: []const u8) !Self {
@@ -233,7 +233,7 @@ const Maze = struct {
         // because the animal cannot squeeze between these tiles and the borders of the maze...
         // so we need to look for tiles that are blocking from the north, in that row...
         // if the tile has an exit to the north, we know that it's connected to another tile
-        // in the row counted before. Every time we see one, we flip the enclosed flag
+        // in the row counted before. Every time we see one of those, we flip the enclosed flag
         // and if we find a ground tile while the it's supposed to be enclosed,
         // then we count that ground tile as an enclosed one...
         var count: usize = 0;
@@ -241,14 +241,10 @@ const Maze = struct {
         for (self.data, 0..) |tile, i| {
             const mod = i % self.width;
             if (mod == 0 or mod == self.width - 1) enclosed = false;
-            switch (tile) {
-                .ground => {
-                    if (enclosed) count += 1;
-                },
-                .northSouth, .northEast, .northWest => {
-                    enclosed = !enclosed;
-                },
-                else => {},
+            if (tile == .ground and enclosed) {
+                count += 1;
+            } else if (tile.hasDirection(.north)) {
+                enclosed = !enclosed;
             }
         }
         return count;
@@ -284,7 +280,7 @@ const Maze = struct {
             var target = Target{
                 .coord = self.start,
                 .tile = assumed_start_tile,
-                .exitDirection = assumed_start_tile.directions().?.@"0",
+                .exit_direction = assumed_start_tile.directions().?.@"0",
             };
 
             const found = while (self.tryMove(target, assumed_start_tile)) |next| : (count += 1) {
@@ -316,29 +312,29 @@ const Maze = struct {
         return main_loop;
     }
 
-    fn tryMove(self: *Self, target: Target, startTile: Tile) ?Target {
+    fn tryMove(self: *Self, target: Target, start_tile: Tile) ?Target {
         // check if it's possible to move east or west
-        const x = switch (target.exitDirection) {
+        const x = switch (target.exit_direction) {
             .west => if (target.coord.x > 0) target.coord.x - 1 else return null,
             .east => if (target.coord.x < self.width - 1) target.coord.x + 1 else return null,
             else => target.coord.x,
         };
 
         // check if it's possible to move north or south
-        const y = switch (target.exitDirection) {
+        const y = switch (target.exit_direction) {
             .north => if (target.coord.y > 0) target.coord.y - 1 else return null,
             .south => if (target.coord.y < self.height - 1) target.coord.y + 1 else return null,
             else => target.coord.y,
         };
 
         // if it's moving to the starting tile, then we need to use the same shape that we started with
-        const tile = if (x == self.start.x and y == self.start.y) startTile else self.tiles[y][x];
+        const tile = if (x == self.start.x and y == self.start.y) start_tile else self.tiles[y][x];
 
         // if the tiles don't match, it hit a dead end
         if (!target.tile.matches(tile)) return null;
 
-        const opposingDirection = target.exitDirection.opposingDirection();
-        const nextExitDirection = tile.exitDirection(opposingDirection) catch {
+        const opposing_direction = target.exit_direction.opposingDirection();
+        const next_exit_direction = tile.exitDirection(opposing_direction) catch {
             // hit a dead end
             return null;
         };
@@ -348,7 +344,7 @@ const Maze = struct {
         return .{
             .coord = .{ .x = x, .y = y },
             .tile = tile,
-            .exitDirection = nextExitDirection.?,
+            .exit_direction = next_exit_direction.?,
         };
     }
 };
