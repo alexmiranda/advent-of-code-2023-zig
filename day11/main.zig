@@ -111,7 +111,8 @@ fn Universe(comptime observable_size: usize) type {
 
         // expand will update each empty space tile with its corresponding
         // weight x and y.
-        fn expand(self: *Self) void {
+        fn expand(self: *Self, expansion: usize) void {
+            const x = expansion - 1;
             // find empty space tiles in empty columns and update them
             for (0..observable_size) |col| {
                 if (!self.isColEmpty(col)) continue;
@@ -119,7 +120,7 @@ fn Universe(comptime observable_size: usize) type {
                 for (0..observable_size) |row| {
                     switch (self.grid[row][col]) {
                         .empty_space => |*tile| {
-                            tile.weight_x += 1;
+                            tile.weight_x += x;
                         },
                         else => {},
                     }
@@ -133,7 +134,7 @@ fn Universe(comptime observable_size: usize) type {
                 for (0..observable_size) |col| {
                     switch (self.grid[row][col]) {
                         .empty_space => |*tile| {
-                            tile.weight_y += 1;
+                            tile.weight_y += x;
                         },
                         else => {},
                     }
@@ -215,14 +216,39 @@ test "example - part 1" {
     var logging_allocator = heap.loggingAllocator(testing.allocator);
     const allocator = logging_allocator.allocator();
     var universe = try ExampleUniverse.init(example);
-    universe.expand();
+    universe.expand(2);
     const result = try universe.totalDistanceBetweenGalaxies(allocator);
     try testing.expectEqual(374, result);
 }
 
 test "input - part 1" {
     var universe = try PuzzleUniverse.init(input);
-    universe.expand();
+    universe.expand(2);
     const result = try universe.totalDistanceBetweenGalaxies(testing.allocator);
     try testing.expectEqual(9795148, result);
+}
+
+test "example 10x - part 2" {
+    var logging_allocator = heap.loggingAllocator(testing.allocator);
+    const allocator = logging_allocator.allocator();
+    var universe = try ExampleUniverse.init(example);
+    universe.expand(10);
+    const result = try universe.totalDistanceBetweenGalaxies(allocator);
+    try testing.expectEqual(1030, result);
+}
+
+test "example 100x - part 2" {
+    var logging_allocator = heap.loggingAllocator(testing.allocator);
+    const allocator = logging_allocator.allocator();
+    var universe = try ExampleUniverse.init(example);
+    universe.expand(100);
+    const result = try universe.totalDistanceBetweenGalaxies(allocator);
+    try testing.expectEqual(8410, result);
+}
+
+test "input - part 2" {
+    var universe = try PuzzleUniverse.init(input);
+    universe.expand(1_000_000);
+    const result = try universe.totalDistanceBetweenGalaxies(testing.allocator);
+    try testing.expectEqual(650672493820, result);
 }
