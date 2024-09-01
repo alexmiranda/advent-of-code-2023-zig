@@ -8,6 +8,7 @@ pub const day07 = @import("day07/main.zig");
 pub const day08 = @import("day08/main.zig");
 pub const day09 = @import("day09/main.zig");
 pub const day10 = @import("day10/main.zig");
+pub const day11 = @import("day11/main.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
