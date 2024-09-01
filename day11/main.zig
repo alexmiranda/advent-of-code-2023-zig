@@ -3,7 +3,6 @@ const mem = std.mem;
 const heap = std.heap;
 const testing = std.testing;
 const print = std.debug.print;
-// const absCast = std.math.absCast;
 const example = @embedFile("example.txt");
 const input = @embedFile("input.txt");
 
@@ -62,8 +61,8 @@ fn Universe(comptime observable_size: usize) type {
         }
 
         fn manhattanDistance(a: Location, b: Location) u64 {
-            const delta_x: u64 = absCast(a.x - b.x);
-            const delta_y: u64 = absCast(a.y - b.y);
+            const delta_x: u64 = @abs(a.x - b.x);
+            const delta_y: u64 = @abs(a.y - b.y);
             return delta_x + delta_y;
         }
 
@@ -179,34 +178,6 @@ fn Universe(comptime observable_size: usize) type {
             }
         }
     };
-}
-
-// HACK: I've literally had to copy this over from std lib because of the error:
-// error: root struct of file 'math' has no member named 'absCast'
-pub fn absCast(x: anytype) switch (@typeInfo(@TypeOf(x))) {
-    .ComptimeInt => comptime_int,
-    .Int => |int_info| std.meta.Int(.unsigned, int_info.bits),
-    else => @compileError("absCast only accepts integers"),
-} {
-    switch (@typeInfo(@TypeOf(x))) {
-        .ComptimeInt => {
-            if (x < 0) {
-                return -x;
-            } else {
-                return x;
-            }
-        },
-        .Int => |int_info| {
-            if (int_info.signedness == .unsigned) return x;
-            const Uint = std.meta.Int(.unsigned, int_info.bits);
-            if (x < 0) {
-                return ~@as(Uint, @bitCast(x +% -1));
-            } else {
-                return @as(Uint, @intCast(x));
-            }
-        },
-        else => unreachable,
-    }
 }
 
 const ExampleUniverse = Universe(10);
