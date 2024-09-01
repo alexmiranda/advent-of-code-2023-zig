@@ -127,6 +127,37 @@ const Coord = struct {
     }
 };
 
+const CoordContext = struct {
+    width: usize,
+
+    pub fn hash(ctx: @This(), key: Coord) u64 {
+        // using a simple hash based on the coordinate indexes
+        // so that we have a nice distributivity and cheap hash
+        const h: u64 = @bitCast(key.y * ctx.width + key.x);
+        return h;
+    }
+
+    pub fn eql(ctx: @This(), lhs: Coord, rhs: Coord) bool {
+        _ = ctx;
+        return lhs.eql(rhs);
+    }
+};
+
+const CoordSet = std.HashMap(Coord, void, CoordContext, std.hash_map.default_max_load_percentage);
+
+const Loop = struct {
+    len: usize = 0,
+    coords: ?CoordSet = null,
+    start_tile: Tile = Tile.start,
+
+    fn deinit(self: *Loop) void {
+        if (self.coords) |*coords| {
+            coords.deinit();
+        }
+        self.* = undefined;
+    }
+};
+
 const Maze = struct {
     allocator: std.mem.Allocator,
     data: []Tile,
@@ -181,31 +212,57 @@ const Maze = struct {
     }
 
     fn farthestPointDistance(self: *@This()) usize {
-        return std.math.divCeil(usize, self.findLongestLoop(), 2) catch 0;
+        var main_loop = self.findLongestLoop() catch return 0;
+        defer main_loop.deinit();
+        return std.math.divCeil(usize, main_loop.len, 2) catch 0;
     }
 
-    fn findLongestLoop(self: *@This()) usize {
-        var max: usize = 0;
+    fn findLongestLoop(self: *@This()) !Loop {
+        var main_loop = Loop{};
+        errdefer main_loop.deinit();
 
         // we need to assume any navigable tile shape of the starting tile
         // to make sure there actually is a loop
-        inline for (navigableTiles) |assumedStartTile| {
+        inline for (navigableTiles) |assumed_start_tile| {
+            // print("==== {} ====\n", .{assumed_start_tile});
+            var set = CoordSet.initContext(self.allocator, .{ .width = self.width });
+            errdefer set.deinit();
+
+            try set.put(self.start, {});
             var count: usize = 0;
             var target = Target{
                 .coord = self.start,
-                .tile = assumedStartTile,
-                .exitDirection = assumedStartTile.directions().?.@"1",
+                .tile = assumed_start_tile,
+                .exitDirection = assumed_start_tile.directions().?.@"0",
             };
-            while (self.tryMove(target, assumedStartTile)) |next| : (count += 1) {
+
+            const found = while (self.tryMove(target, assumed_start_tile)) |next| : (count += 1) {
                 // if we've reached the start tile, we check if this loop is the longest
                 if (next.coord.eql(self.start)) {
-                    max = @max(max, count);
-                    break;
+                    if (count > main_loop.len) {
+                        // another loop was found before and needs to be cleaned up
+                        if (main_loop.coords) |*coords| {
+                            coords.deinit();
+                        }
+                        main_loop.len = count;
+                        main_loop.coords = set;
+                        main_loop.start_tile = assumed_start_tile;
+                        break true;
+                    }
+                    break false; // we found a loop, but it's not the longest
                 }
+                try set.put(next.coord, {});
                 target = next;
+            } else false;
+
+            // ensure that the set of coordinates is freed
+            // this only happens if it's not the longest loop found so far
+            if (!found) {
+                // print("> cleaning up...\n", .{});
+                set.deinit();
             }
         }
-        return max;
+        return main_loop;
     }
 
     fn tryMove(self: *@This(), target: Target, startTile: Tile) ?Target {
@@ -253,7 +310,9 @@ fn printRow(tiles: []Tile) void {
 }
 
 test "example1 - part 1" {
-    var maze = try Maze.init(std.testing.allocator, example1);
+    var logging_allocator = std.heap.loggingAllocator(std.testing.allocator);
+    const allocator = logging_allocator.allocator();
+    var maze = try Maze.init(allocator, example1);
     defer maze.deinit();
 
     const result = maze.farthestPointDistance();
