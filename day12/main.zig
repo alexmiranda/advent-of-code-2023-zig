@@ -60,18 +60,21 @@ const Record = struct {
         // print("springs: ", .{});
         // printSprings(self.springs);
         // print("counts: {d}\n", .{self.counts});
+        var arena = heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
 
         const State = struct {
             springs: []Spring,
             pos: usize = 0,
         };
 
-        var mutations = std.ArrayList(State).init(self.allocator);
+        var mutations = std.ArrayList(State).init(allocator);
         defer mutations.deinit();
 
         {
-            const springs = try self.clone(self.springs);
-            errdefer self.allocator.free(springs);
+            const springs = try clone(allocator, self.springs);
+            errdefer allocator.free(springs);
             @memcpy(springs, self.springs);
             try mutations.append(.{ .springs = springs, .pos = 0 });
         }
@@ -79,23 +82,23 @@ const Record = struct {
         var counter: u64 = 0;
         while (mutations.items.len > 0) {
             const state = mutations.pop();
-            defer self.allocator.free(state.springs);
+            defer allocator.free(state.springs);
 
             if (mem.indexOfScalarPos(Spring, state.springs, state.pos, .unknown)) |index| {
                 {
-                    var springs = try self.clone(state.springs);
-                    errdefer self.allocator.free(springs);
+                    var springs = try clone(allocator, state.springs);
+                    errdefer allocator.free(springs);
                     springs[index] = .operational;
                     try mutations.append(.{ .springs = springs, .pos = index + 1 });
                 }
 
                 {
-                    var springs = try self.clone(state.springs);
-                    errdefer self.allocator.free(springs);
+                    var springs = try clone(allocator, state.springs);
+                    errdefer allocator.free(springs);
                     springs[index] = .damaged;
                     try mutations.append(.{ .springs = springs, .pos = index + 1 });
                 }
-            } else if (try self.verify(state.springs)) {
+            } else if (try verify(allocator, state.springs, self.counts)) {
                 // print("solution: ", .{});
                 // printSprings(state.springs);
                 counter += 1;
@@ -105,30 +108,30 @@ const Record = struct {
         return counter;
     }
 
-    fn clone(self: *Record, springs: []Spring) ![]Spring {
-        const copy = try self.allocator.alloc(Spring, springs.len);
-        errdefer self.allocator.free(copy);
+    fn clone(allocator: mem.Allocator, springs: []Spring) ![]Spring {
+        const copy = try allocator.alloc(Spring, springs.len);
+        errdefer allocator.free(copy);
         @memcpy(copy, springs);
         return copy;
     }
 
-    fn verify(self: *Record, springs: []Spring) !bool {
-        var list = try std.ArrayList(u8).initCapacity(self.allocator, self.counts.len);
+    fn verify(allocator: mem.Allocator, springs: []Spring, counts: []u8) !bool {
+        var list = try std.ArrayList(u8).initCapacity(allocator, counts.len);
         defer list.deinit();
 
         var it = mem.tokenizeScalar(Spring, springs, .operational);
         var slide: usize = 0;
         while (it.next()) |segment| : (slide += 1) {
-            if (slide >= self.counts.len) return false;
+            if (slide >= counts.len) return false;
             if (mem.indexOfScalar(Spring, segment, .unknown)) |_| {
                 return false;
             }
-            const count: usize = @intCast(self.counts[slide]);
+            const count: usize = @intCast(counts[slide]);
             if (segment.len != count) {
                 return false;
             }
         }
-        return slide == self.counts.len;
+        return slide == counts.len;
     }
 
     fn printSprings(springs: []Spring) void {
@@ -145,8 +148,7 @@ const Record = struct {
 };
 
 test "example - part 1" {
-    var logging_allocator = heap.loggingAllocator(testing.allocator);
-    const allocator = logging_allocator.allocator();
+    const allocator = testing.allocator;
 
     var sum: u64 = 0;
     var it = mem.tokenizeScalar(u8, example, '\n');
@@ -160,8 +162,9 @@ test "example - part 1" {
 }
 
 test "input - part 1" {
-    if (true) return error.SkipZigTest;
-    const allocator = testing.allocator;
+    // if (true) return error.SkipZigTest;
+    var logging_allocator = heap.LoggingAllocator(.debug, .debug).init(heap.page_allocator);
+    const allocator = logging_allocator.allocator();
 
     var sum: u64 = 0;
     var it = mem.tokenizeScalar(u8, input, '\n');
