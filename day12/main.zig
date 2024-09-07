@@ -11,6 +11,23 @@ const Spring = enum(u2) {
     operational = 1,
     damaged = 2,
     unknown = 0,
+
+    fn fromChar(c: u8) Spring {
+        return switch (c) {
+            '.' => .operational,
+            '#' => .damaged,
+            '?' => .unknown,
+            else => unreachable,
+        };
+    }
+
+    fn toChar(self: Spring) u8 {
+        return switch (self) {
+            .operational => '.',
+            .damaged => '#',
+            .unknown => '?',
+        };
+    }
 };
 
 const CacheKey = struct {
@@ -45,14 +62,7 @@ const Record = struct {
         var springs = try allocator.alloc(Spring, left_part.len);
         errdefer allocator.free(springs);
 
-        for (left_part, 0..) |c, i| {
-            springs[i] = switch (c) {
-                '.' => .operational,
-                '#' => .damaged,
-                '?' => .unknown,
-                else => unreachable,
-            };
-        }
+        for (left_part, 0..) |c, i| springs[i] = Spring.fromChar(c);
 
         const right_part = s[springs.len + 1 ..];
         const commas = mem.count(u8, right_part, ",");
@@ -62,7 +72,7 @@ const Record = struct {
         var it = mem.splitScalar(u8, right_part, ',');
         var slide: usize = 0;
         while (it.next()) |num| : (slide += 1) {
-            try counts.append(try fmt.parseInt(u8, num, 10));
+            counts.appendAssumeCapacity(try fmt.parseInt(u8, num, 10));
         }
 
         return .{
@@ -77,7 +87,8 @@ const Record = struct {
         self.allocator.free(self.counts);
     }
 
-    fn solve(self: *Record) !u64 {
+    fn solve(self: *Record, folds: u8) !u64 {
+        try self.unfold(folds);
         var cache = Cache.init(self.allocator);
         defer cache.deinit();
         return try countArrangements(self.springs, self.counts, null, &cache);
@@ -162,11 +173,12 @@ const Record = struct {
         return result;
     }
 
-    fn unfold(self: *Record) !void {
+    fn unfold(self: *Record, folds: u8) !void {
+        if (folds == 1) return;
         const old_springs = self.springs;
         const springs = blk: {
             const old_len = old_springs.len;
-            const new_len = old_len * 5 + 4;
+            const new_len = old_len * folds + (folds - 1);
             const unfolded = try self.allocator.alloc(Spring, new_len);
             errdefer self.allocator.free(unfolded);
             @memcpy(unfolded[0..old_len], old_springs);
@@ -183,7 +195,7 @@ const Record = struct {
         const old_counts = self.counts;
         const counts = blk: {
             const old_len = self.counts.len;
-            const new_len = old_len * 5;
+            const new_len = old_len * folds;
             const unfolded = try self.allocator.alloc(u8, new_len);
             var slide: usize = 0;
             while (slide < new_len) : (slide += old_len) {
@@ -195,98 +207,45 @@ const Record = struct {
         self.allocator.free(old_counts);
     }
 
-    fn verify(allocator: mem.Allocator, springs: []Spring, counts: []u8) !bool {
-        var list = try std.ArrayList(u8).initCapacity(allocator, counts.len);
-        defer list.deinit();
-
-        var it = mem.tokenizeScalar(Spring, springs, .operational);
-        var slide: usize = 0;
-        while (it.next()) |segment| : (slide += 1) {
-            if (slide >= counts.len) return false;
-            if (mem.indexOfScalar(Spring, segment, .unknown)) |_| {
-                return false;
-            }
-            const count: usize = @intCast(counts[slide]);
-            if (segment.len != count) {
-                return false;
-            }
-        }
-        return slide == counts.len;
-    }
-
     fn printSprings(springs: []Spring) void {
         for (springs) |spring| {
-            const c: u8 = switch (spring) {
-                .operational => '.',
-                .damaged => '#',
-                .unknown => '?',
-            };
-            print("{c}", .{c});
+            print("{c}", .{spring.toChar()});
         }
         print("\n", .{});
     }
 };
 
-test "example - part 1" {
-    const allocator = testing.allocator;
-
+fn solveAll(allocator: mem.Allocator, s: []const u8, folds: u8) !u64 {
     var sum: u64 = 0;
-    var it = mem.tokenizeScalar(u8, example, '\n');
+    var it = mem.tokenizeScalar(u8, s, '\n');
     while (it.next()) |line| {
         var rec = try Record.initParse(allocator, line);
         defer rec.deinit();
-        sum += try rec.solve();
+        sum += try rec.solve(folds);
     }
+    return sum;
+}
 
-    try testing.expectEqual(21, sum);
+fn runTest(s: []const u8, comptime folds: u8, comptime expected: u64) !void {
+    var logging_allocator = heap.LoggingAllocator(.debug, .debug).init(testing.allocator);
+    const result = try solveAll(logging_allocator.allocator(), s, folds);
+    try testing.expectEqual(expected, result);
+}
+
+test "example - part 1" {
+    try runTest(example, 1, 21);
 }
 
 test "input - part 1" {
-    var logging_allocator = heap.LoggingAllocator(.debug, .debug).init(heap.page_allocator);
-    const allocator = logging_allocator.allocator();
-
-    var sum: u64 = 0;
-    var it = mem.tokenizeScalar(u8, input, '\n');
-    while (it.next()) |line| {
-        var rec = try Record.initParse(allocator, line);
-        defer rec.deinit();
-        sum += try rec.solve();
-    }
-
-    try testing.expectEqual(7670, sum);
+    try runTest(input, 1, 7670);
 }
 
 test "example - part 2" {
     // if (true) return error.SkipZigTest;
-    var logging_allocator = heap.LoggingAllocator(.debug, .debug).init(testing.allocator);
-    const allocator = logging_allocator.allocator();
-
-    var sum: u64 = 0;
-    var it = mem.tokenizeScalar(u8, example, '\n');
-    while (it.next()) |line| {
-        // print("{s}\n", .{line});
-        var rec = try Record.initParse(allocator, line);
-        defer rec.deinit();
-        try rec.unfold();
-        sum += try rec.solve();
-    }
-
-    try testing.expectEqual(525152, sum);
+    try runTest(example, 5, 525152);
 }
 
 test "input - part 2" {
     // if (true) return error.SkipZigTest;
-    var logging_allocator = heap.LoggingAllocator(.debug, .debug).init(heap.page_allocator);
-    const allocator = logging_allocator.allocator();
-
-    var sum: u64 = 0;
-    var it = mem.tokenizeScalar(u8, input, '\n');
-    while (it.next()) |line| {
-        var rec = try Record.initParse(allocator, line);
-        defer rec.deinit();
-        try rec.unfold();
-        sum += try rec.solve();
-    }
-
-    try testing.expectEqual(157383940585037, sum);
+    try runTest(input, 5, 157383940585037);
 }
