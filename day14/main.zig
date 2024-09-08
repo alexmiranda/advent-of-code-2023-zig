@@ -1,4 +1,7 @@
 const std = @import("std");
+const mem = std.mem;
+const heap = std.heap;
+const testing = std.testing;
 const swap = std.mem.swap;
 const expectEqual = std.testing.expectEqual;
 const print = std.debug.print;
@@ -45,6 +48,7 @@ fn Grid(comptime size: usize) type {
             };
         }
 
+        // slide northwards all the rounded rocks to the first empty tile possible
         fn slideNorth(self: *Self) void {
             for (0..size) |col| {
                 var first_empty: usize = 0;
@@ -82,6 +86,55 @@ fn Grid(comptime size: usize) type {
             return load;
         }
 
+        // rotate clockwise 90 degrees
+        fn rotate(self: *Self) void {
+            var rotated: [size][size]Tile = undefined;
+            for (0..size) |row| {
+                for (0..size) |col| {
+                    rotated[col][size - 1 - row] = self.tiles[row][col];
+                }
+            }
+            self.tiles = rotated;
+        }
+
+        fn spinCycle(self: *Self, allocator: mem.Allocator, n: usize) !void {
+            var arena = heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const keys_allocator = arena.allocator();
+
+            const buf_len: usize = size * size;
+            var buf = try keys_allocator.alloc(u8, buf_len);
+            var seen = std.StringHashMap(usize).init(allocator);
+            defer seen.deinit();
+
+            // add the initial state
+            try seen.put(self.fingerprint(buf), 0);
+
+            // detect cycle
+            var slide: usize = 1;
+            const cycle_length = while (slide < n) : (slide += 1) {
+                self.doCycle();
+                buf = try keys_allocator.alloc(u8, buf_len);
+                if (try seen.fetchPut(self.fingerprint(buf), slide)) |kv| {
+                    break slide - kv.value;
+                }
+            } else unreachable;
+
+            // execute the remaining cycles
+            const remaining = (n - slide) % cycle_length;
+            for (0..remaining) |_| {
+                self.doCycle();
+            }
+        }
+
+        // rotate 4 times: north, west, south and east and slide the rolling rocks
+        fn doCycle(self: *Self) void {
+            for (0..4) |_| {
+                self.slideNorth();
+                self.rotate();
+            }
+        }
+
         // unused
         fn printTiles(self: *Self) void {
             for (0..size) |row| {
@@ -90,6 +143,19 @@ fn Grid(comptime size: usize) type {
                 }
                 print("\n", .{});
             }
+        }
+
+        // create a string representing the grid state
+        fn fingerprint(self: *Self, buf: []u8) []u8 {
+            var slide: usize = 0;
+            for (0..size) |row| {
+                for (0..size) |col| {
+                    const c = self.tiles[row][col].toChar();
+                    buf[slide] = c;
+                    slide += 1;
+                }
+            }
+            return buf[0..slide];
         }
     };
 }
@@ -108,4 +174,20 @@ test "input - part 1" {
     grid.slideNorth();
     const total_load = grid.totalLoad();
     try expectEqual(105003, total_load);
+}
+
+test "example - part 2" {
+    var grid = Grid(10){};
+    grid.fill(example);
+    try grid.spinCycle(testing.allocator, 1_000_000_000);
+    const total_load = grid.totalLoad();
+    try expectEqual(64, total_load);
+}
+
+test "input - part 2" {
+    var grid = Grid(100){};
+    grid.fill(input);
+    try grid.spinCycle(testing.allocator, 1_000_000_000);
+    const total_load = grid.totalLoad();
+    try expectEqual(93742, total_load);
 }
