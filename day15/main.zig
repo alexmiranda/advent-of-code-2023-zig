@@ -8,20 +8,16 @@ fn hash(s: []const u8) u32 {
     var sum: u32 = 0;
     var h: u32 = 0;
     return for (s) |c| switch (c) {
-        '\n' => {
-            sum += h;
-            break sum;
-        },
-        ',' => {
+        ',', '\n' => {
             sum += h;
             h = 0;
         },
         else => h = (h + c) * 17 % 256,
-    } else sum;
+    } else sum + h;
 }
 
 test "example HASH - part 1" {
-    try expectEqual(52, hash("HASH\n"));
+    try expectEqual(52, hash("HASH"));
 }
 
 test "example - part 1" {
