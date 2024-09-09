@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const heap = std.heap;
 const testing = std.testing;
+const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
 const example = @embedFile("example.txt");
 const input = @embedFile("input.txt");
@@ -25,8 +26,7 @@ const Tile = enum {
     }
 
     inline fn bounce(self: Tile, dir: Direction) []Direction {
-        var dirs: [2]Direction = undefined;
-        @memset(&dirs, dir);
+        var dirs = [_]Direction{ dir, dir };
         switch (self) {
             .empty_space => return dirs[0..1],
             .right_angled_mirror => {
@@ -123,7 +123,36 @@ fn Contraption(comptime size: u8) type {
             }
         }
 
-        fn countEnergisedTiles(self: Self, allocator: mem.Allocator) !usize {
+        fn bestConfiguration(self: Self, allocator: mem.Allocator) !usize {
+            var max: usize = 0;
+            // top heading down
+            for (0..size) |i| {
+                const count = try self.countEnergisedTiles(allocator, .{ .row = 0, .col = i }, .down);
+                max = @max(max, count);
+            }
+
+            // right heading left
+            for (0..size) |i| {
+                const count = try self.countEnergisedTiles(allocator, .{ .row = i, .col = size - 1 }, .left);
+                max = @max(max, count);
+            }
+
+            // down heading up
+            for (0..size) |i| {
+                const count = try self.countEnergisedTiles(allocator, .{ .row = size - 1, .col = i }, .up);
+                max = @max(max, count);
+            }
+
+            // left heading right
+            for (0..size) |i| {
+                const count = try self.countEnergisedTiles(allocator, .{ .row = i, .col = 0 }, .right);
+                max = @max(max, count);
+            }
+
+            return max;
+        }
+
+        fn countEnergisedTiles(self: Self, allocator: mem.Allocator, start_point: Coord, start_direction: Direction) !usize {
             const Bean = struct {
                 coord: Coord,
                 dir: Direction,
@@ -136,7 +165,7 @@ fn Contraption(comptime size: u8) type {
             defer energised.deinit();
 
             // start with a single bean in the top-left corner moving right
-            try queue.append(.{ .coord = .{ .row = 0, .col = 0 }, .dir = .right });
+            try queue.append(.{ .coord = start_point, .dir = start_direction });
 
             // for as long as there are active beans...
             while (queue.popOrNull()) |*bean| {
@@ -176,14 +205,35 @@ fn Contraption(comptime size: u8) type {
     };
 }
 
+const ExampleContraption = Contraption(10);
+const InputContraption = Contraption(110);
+
 test "example - part 1" {
-    var contraption = Contraption(10){};
+    const allocator = testing.allocator;
+    var contraption = ExampleContraption{};
     contraption.parse(example);
-    try expectEqual(46, contraption.countEnergisedTiles(testing.allocator));
+    const start_point = ExampleContraption.Coord{ .row = 0, .col = 0 };
+    try expectEqual(46, contraption.countEnergisedTiles(allocator, start_point, .right));
 }
 
 test "input - part 1" {
-    var contraption = Contraption(110){};
+    const allocator = testing.allocator;
+    var contraption = InputContraption{};
     contraption.parse(input);
-    try expectEqual(8249, contraption.countEnergisedTiles(testing.allocator));
+    const start_point = InputContraption.Coord{ .row = 0, .col = 0 };
+    try expectEqual(8249, contraption.countEnergisedTiles(allocator, start_point, .right));
+}
+
+test "example - part 2" {
+    const allocator = testing.allocator;
+    var contraption = ExampleContraption{};
+    contraption.parse(example);
+    try expectEqual(51, contraption.bestConfiguration(allocator));
+}
+
+test "input - part 2" {
+    const allocator = testing.allocator;
+    var contraption = InputContraption{};
+    contraption.parse(input);
+    try expectEqual(8444, contraption.bestConfiguration(allocator));
 }
