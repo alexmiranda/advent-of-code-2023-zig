@@ -124,29 +124,16 @@ fn Contraption(comptime size: u8) type {
         }
 
         fn bestConfiguration(self: Self, allocator: mem.Allocator) !usize {
+            var arena = heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const alloc = arena.allocator();
+
             var max: usize = 0;
-            // top heading down
-            for (0..size) |i| {
-                const count = try self.countEnergisedTiles(allocator, .{ .row = 0, .col = i }, .down);
-                max = @max(max, count);
-            }
-
-            // right heading left
-            for (0..size) |i| {
-                const count = try self.countEnergisedTiles(allocator, .{ .row = i, .col = size - 1 }, .left);
-                max = @max(max, count);
-            }
-
-            // down heading up
-            for (0..size) |i| {
-                const count = try self.countEnergisedTiles(allocator, .{ .row = size - 1, .col = i }, .up);
-                max = @max(max, count);
-            }
-
-            // left heading right
-            for (0..size) |i| {
-                const count = try self.countEnergisedTiles(allocator, .{ .row = i, .col = 0 }, .right);
-                max = @max(max, count);
+            inline for (0..size) |i| {
+                max = @max(max, try self.countEnergisedTiles(alloc, .{ .row = 0, .col = i }, .down)); // top edge heading down
+                max = @max(max, try self.countEnergisedTiles(alloc, .{ .row = i, .col = size - 1 }, .left)); // right edge heading left
+                max = @max(max, try self.countEnergisedTiles(alloc, .{ .row = size - 1, .col = i }, .up)); // bottom edge heading up
+                max = @max(max, try self.countEnergisedTiles(alloc, .{ .row = i, .col = 0 }, .right)); // left edge heading right
             }
 
             return max;
