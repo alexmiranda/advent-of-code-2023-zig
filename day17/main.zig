@@ -4,7 +4,9 @@ const math = std.math;
 const Order = std.math.Order;
 const testing = std.testing;
 const expectEqual = std.testing.expectEqual;
+const print = std.debug.print;
 const example = @embedFile("example.txt");
+const example2 = @embedFile("example2.txt");
 const input = @embedFile("input.txt");
 
 const CityBlock = u8;
@@ -29,12 +31,14 @@ const BlockAddress = struct {
     row: u8,
     col: u8,
 
-    fn moveTo(self: BlockAddress, dir: Direction, grid_size: u8) ?BlockAddress {
+    fn moveTo(self: BlockAddress, dir: Direction, offset: u8, grid_height: u8, grid_width: u8) ?BlockAddress {
+        const last_row_index = grid_height - 1;
+        const last_col_index = grid_width - 1;
         return switch (dir) {
-            .up => if (self.row > 0) .{ .row = self.row - 1, .col = self.col } else null,
-            .right => if (self.col < grid_size - 1) .{ .row = self.row, .col = self.col + 1 } else null,
-            .down => if (self.row < grid_size - 1) .{ .row = self.row + 1, .col = self.col } else null,
-            .left => if (self.col > 0) .{ .row = self.row, .col = self.col - 1 } else null,
+            .up => if (self.row >= offset) .{ .row = self.row - offset, .col = self.col } else null,
+            .right => if (self.col <= last_col_index - offset) .{ .row = self.row, .col = self.col + offset } else null,
+            .down => if (self.row <= last_row_index - offset) .{ .row = self.row + offset, .col = self.col } else null,
+            .left => if (self.col >= offset) .{ .row = self.row, .col = self.col - offset } else null,
         };
     }
 };
@@ -53,6 +57,7 @@ const State = struct {
 
 fn lessThan(ctx: void, lhs: State, rhs: State) Order {
     _ = ctx;
+    // return math.order(lhs.heat_lost, rhs.heat_lost);
     return switch (math.order(lhs.heat_lost, rhs.heat_lost)) {
         .eq => math.order(lhs.heuristic, rhs.heuristic),
         else => |cmp| cmp,
@@ -84,28 +89,32 @@ const EdgeContext = struct {
 const HeatLossMap = std.HashMap(Edge, u32, EdgeContext, std.hash_map.default_max_load_percentage);
 
 fn CityMap(buffer: []const u8) type {
-    const size = comptime mem.indexOfScalar(u8, buffer, '\n').?;
+    const width = comptime mem.indexOfScalar(u8, buffer, '\n').?;
+    const height = blk: {
+        @setEvalBranchQuota(buffer.len + 1000);
+        break :blk comptime mem.count(u8, buffer, "\n");
+    };
 
     return struct {
         const blocks = blk: {
             @setEvalBranchQuota(buffer.len + 1000);
-            var data: [size][size]CityBlock = undefined;
+            var data: [height][width]CityBlock = undefined;
             var slide: u16 = 0;
             for (buffer) |c| {
                 if (c == '\n') continue;
-                data[slide / size][slide % size] = c - '0';
+                data[slide / width][slide % width] = c - '0';
                 slide += 1;
             }
             break :blk data;
         };
 
         const Self = @This();
-        const max_moves_same_direction = 3;
 
-        fn moveCrucible(self: *Self, allocator: mem.Allocator) !u32 {
+        fn moveCrucible(self: *Self, allocator: mem.Allocator, min: u8, max: u8) !u32 {
             _ = self;
+            std.debug.assert(min < max);
             const start_at = BlockAddress{ .row = 0, .col = 0 };
-            const goal = BlockAddress{ .row = size - 1, .col = size - 1 };
+            const goal = BlockAddress{ .row = height - 1, .col = width - 1 };
             const inf = math.maxInt(u16);
 
             // queue to keep track of blocks to visit
@@ -113,11 +122,11 @@ fn CityMap(buffer: []const u8) type {
             defer queue.deinit();
 
             // start at the lava pool towards the right edge
-            const rightEdge = Edge{ .addr = start_at, .dir = .right, .count = 1 };
+            const rightEdge = Edge{ .addr = start_at, .dir = .right, .count = 0 };
             try queue.add(.{ .edge = rightEdge, .heat_lost = 0, .heuristic = inf });
 
             // or towards the bottom edge
-            const downEdge = Edge{ .addr = start_at, .dir = .down, .count = 1 };
+            const downEdge = Edge{ .addr = start_at, .dir = .down, .count = 0 };
             try queue.add(.{ .edge = downEdge, .heat_lost = 0, .heuristic = inf });
 
             // map to keep track of edges that we visited and the best way to reach them
@@ -127,47 +136,85 @@ fn CityMap(buffer: []const u8) type {
             visited.putAssumeCapacity(rightEdge, 0);
             visited.putAssumeCapacity(downEdge, 0);
 
+            var min_heat_loss: u32 = math.maxInt(u32);
             const directions = [_]Direction{ .up, .right, .down, .left };
-            return while (queue.removeOrNull()) |state| {
-                std.debug.assert(state.edge.count <= max_moves_same_direction);
+            var counter: usize = 0;
+            return while (queue.removeOrNull()) |state| : (counter += 1) {
+                // std.debug.assert(counter < 4);
+                // print("{any}\n", .{state});
+
+                std.debug.assert(state.edge.count <= max);
                 const addr = state.edge.addr;
                 const curr_dir = state.edge.dir;
                 const curr_count = state.edge.count;
 
                 // we've reached the goal
                 if (addr.row == goal.row and addr.col == goal.col) {
-                    break state.heat_lost;
+                    if (min == 1) break state.heat_lost;
+                    min_heat_loss = @min(min_heat_loss, state.heat_lost);
                 }
 
+                // try to move in the same direction
+                if (curr_count < max) {
+                    const step = if (curr_count == 0) min else 1;
+                    if (addr.moveTo(curr_dir, step, height, width)) |next_addr| {
+                        const cost = calculateCostBetween(addr, next_addr);
+                        std.debug.assert(cost >= 1 and cost <= step * 9);
+                        const tentative_heat_lost = state.heat_lost + cost;
+                        const count = curr_count + step;
+                        const edge = Edge{ .addr = next_addr, .dir = curr_dir, .count = count };
+                        const lookup = try visited.getOrPut(edge);
+                        if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
+                            lookup.value_ptr.* = tentative_heat_lost;
+                            try queue.add(.{ .edge = edge, .heat_lost = tentative_heat_lost, .heuristic = manhattan(next_addr, goal) });
+                        }
+                    }
+                }
+
+                if (curr_count < min) continue;
+
                 for (directions) |dir| {
-                    // cannot move to opposite direction or more than the maximum moves in the same direction
-                    if (dir == curr_dir.opposite() or (dir == curr_dir and curr_count == max_moves_same_direction)) {
+                    // cannot move to opposite direction or in the same direction
+                    if (dir == curr_dir.opposite() or dir == curr_dir) {
                         continue;
                     }
 
-                    // determined the next block to visit and the possible amount of heat lost
-                    const next_addr = addr.moveTo(dir, size) orelse continue;
-                    const cost = blocks[next_addr.row][next_addr.col];
-                    std.debug.assert(cost >= 1 and cost <= 9);
+                    const next_addr = addr.moveTo(dir, min, height, width) orelse continue;
+                    const cost = calculateCostBetween(addr, next_addr);
                     const tentative_heat_lost = state.heat_lost + cost;
-                    const count = if (dir == curr_dir) curr_count + 1 else 1;
-
-                    // if we didn't visit this edge before or if we found a better way there
-                    const edge = Edge{ .addr = next_addr, .dir = dir, .count = count };
+                    const edge = Edge{ .addr = next_addr, .dir = dir, .count = min };
                     const lookup = try visited.getOrPut(edge);
                     if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
-                        // update the edge heat lost
                         lookup.value_ptr.* = tentative_heat_lost;
-
-                        // and plan more routes to explore the rest of the city blocks
-                        try queue.add(.{
-                            .edge = edge,
-                            .heat_lost = tentative_heat_lost,
-                            .heuristic = manhattan(next_addr, goal),
-                        });
+                        try queue.add(.{ .edge = edge, .heat_lost = tentative_heat_lost, .heuristic = manhattan(next_addr, goal) });
                     }
+
+                    // // determine the next block to visit and the possible amount of heat lost
+                    // const step = if (curr_count == 0) min else 1;
+                    // // const step = if (curr_count < min) min - curr_count + 1 else min;
+                    // const next_addr = addr.moveTo(dir, step, height, width) orelse continue;
+                    // // const cost = blocks[next_addr.row][next_addr.col];
+                    // const cost = calculateCostBetween(addr, next_addr);
+                    // std.debug.assert(cost >= 1 and cost <= step * 9);
+                    // const tentative_heat_lost = state.heat_lost + cost;
+                    // const count = if (dir == curr_dir) @max(curr_count, step) + 1 else 1;
+
+                    // // if we didn't visit this edge before or if we found a better way there
+                    // const edge = Edge{ .addr = next_addr, .dir = dir, .count = count };
+                    // const lookup = try visited.getOrPut(edge);
+                    // if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
+                    //     // update the edge heat lost
+                    //     lookup.value_ptr.* = tentative_heat_lost;
+
+                    //     // and plan more routes to explore the rest of the city blocks
+                    //     try queue.add(.{
+                    //         .edge = edge,
+                    //         .heat_lost = tentative_heat_lost,
+                    //         .heuristic = manhattan(next_addr, goal),
+                    //     });
+                    // }
                 }
-            } else @panic("could not find a way to reach the machine parts factory!");
+            } else min_heat_loss;
         }
 
         fn manhattan(a: BlockAddress, b: BlockAddress) u16 {
@@ -177,17 +224,54 @@ fn CityMap(buffer: []const u8) type {
             const b_col: i16 = @intCast(b.col);
             return @abs(a_row - b_row) + @abs(a_col - b_col);
         }
+
+        // calculate the heat loss between the source and destination blocks, inclusive
+        // and then subtract the source
+        fn calculateCostBetween(src: BlockAddress, dst: BlockAddress) u16 {
+            // print("calculating cost betweenn {any} and {any}\n", .{ src, dst });
+            var sum: u16 = 0;
+            if (src.row == dst.row) {
+                const start = @min(src.col, dst.col);
+                const end = @max(src.col, dst.col);
+                for (start..end + 1) |col| sum += blocks[src.row][col];
+                return sum - blocks[src.row][src.col];
+            } else if (src.col == dst.col) {
+                const start = @min(src.row, dst.row);
+                const end = @max(src.row, dst.row);
+                for (start..end + 1) |row| sum += blocks[row][src.col];
+                return sum - blocks[src.row][src.col];
+            }
+            @panic("either the row or the col must match!");
+        }
     };
 }
 
 test "example - part 1" {
     var city_map = CityMap(example){};
-    const result = try city_map.moveCrucible(testing.allocator);
+    const result = try city_map.moveCrucible(testing.allocator, 1, 3);
     try expectEqual(102, result);
 }
 
 test "input - part 1" {
     var city_map = CityMap(input){};
-    const result = try city_map.moveCrucible(testing.allocator);
+    const result = try city_map.moveCrucible(testing.allocator, 1, 3);
     try expectEqual(684, result);
+}
+
+test "example - part 2" {
+    var city_map = CityMap(example){};
+    const result = try city_map.moveCrucible(testing.allocator, 4, 10);
+    try expectEqual(94, result);
+}
+
+test "example 2 - part 2" {
+    var city_map = CityMap(example2){};
+    const result = try city_map.moveCrucible(testing.allocator, 4, 10);
+    try expectEqual(71, result);
+}
+
+test "input - part 2" {
+    var city_map = CityMap(input){};
+    const result = try city_map.moveCrucible(testing.allocator, 4, 10);
+    try expectEqual(822, result);
 }
