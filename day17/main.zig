@@ -4,6 +4,7 @@ const math = std.math;
 const Order = std.math.Order;
 const testing = std.testing;
 const expectEqual = std.testing.expectEqual;
+const assert = std.debug.assert;
 const print = std.debug.print;
 const example = @embedFile("example.txt");
 const example2 = @embedFile("example2.txt");
@@ -136,85 +137,53 @@ fn CityMap(buffer: []const u8) type {
             visited.putAssumeCapacity(rightEdge, 0);
             visited.putAssumeCapacity(downEdge, 0);
 
-            var min_heat_loss: u32 = math.maxInt(u32);
             const directions = [_]Direction{ .up, .right, .down, .left };
-            var counter: usize = 0;
-            return while (queue.removeOrNull()) |state| : (counter += 1) {
-                // std.debug.assert(counter < 4);
-                // print("{any}\n", .{state});
-
-                std.debug.assert(state.edge.count <= max);
+            return while (queue.removeOrNull()) |state| {
+                assert(state.edge.count <= max);
                 const addr = state.edge.addr;
                 const curr_dir = state.edge.dir;
                 const curr_count = state.edge.count;
 
                 // we've reached the goal
                 if (addr.row == goal.row and addr.col == goal.col) {
-                    if (min == 1) break state.heat_lost;
-                    min_heat_loss = @min(min_heat_loss, state.heat_lost);
+                    break state.heat_lost;
                 }
-
-                // try to move in the same direction
-                if (curr_count < max) {
-                    const step = if (curr_count == 0) min else 1;
-                    if (addr.moveTo(curr_dir, step, height, width)) |next_addr| {
-                        const cost = calculateCostBetween(addr, next_addr);
-                        std.debug.assert(cost >= 1 and cost <= step * 9);
-                        const tentative_heat_lost = state.heat_lost + cost;
-                        const count = curr_count + step;
-                        const edge = Edge{ .addr = next_addr, .dir = curr_dir, .count = count };
-                        const lookup = try visited.getOrPut(edge);
-                        if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
-                            lookup.value_ptr.* = tentative_heat_lost;
-                            try queue.add(.{ .edge = edge, .heat_lost = tentative_heat_lost, .heuristic = manhattan(next_addr, goal) });
-                        }
-                    }
-                }
-
-                if (curr_count < min) continue;
 
                 for (directions) |dir| {
-                    // cannot move to opposite direction or in the same direction
-                    if (dir == curr_dir.opposite() or dir == curr_dir) {
+                    // cannot move to opposite direction or
+                    // more than the maximum in the same direction or
+                    // in another direction before the minimum
+                    if (dir == curr_dir.opposite() or
+                        (dir == curr_dir and curr_count == max) or
+                        (dir != curr_dir and curr_count < min))
+                    {
                         continue;
                     }
 
-                    const next_addr = addr.moveTo(dir, min, height, width) orelse continue;
+                    // determine the next block to visit and the possible amount of heat lost
+                    const step = if ((dir == curr_dir and curr_count == 0) or dir != curr_dir) min else 1;
+                    const next_addr = addr.moveTo(dir, step, height, width) orelse continue;
                     const cost = calculateCostBetween(addr, next_addr);
+                    assert(cost >= 1 and cost <= step * 9);
                     const tentative_heat_lost = state.heat_lost + cost;
-                    const edge = Edge{ .addr = next_addr, .dir = dir, .count = min };
+                    const count = if (dir == curr_dir) curr_count + step else min;
+
+                    // if we didn't visit this edge before or if we found a better way there
+                    const edge = Edge{ .addr = next_addr, .dir = dir, .count = count };
                     const lookup = try visited.getOrPut(edge);
                     if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
+                        // update the edge heat lost
                         lookup.value_ptr.* = tentative_heat_lost;
-                        try queue.add(.{ .edge = edge, .heat_lost = tentative_heat_lost, .heuristic = manhattan(next_addr, goal) });
+
+                        // and plan more routes to explore the rest of the city blocks
+                        try queue.add(.{
+                            .edge = edge,
+                            .heat_lost = tentative_heat_lost,
+                            .heuristic = manhattan(next_addr, goal),
+                        });
                     }
-
-                    // // determine the next block to visit and the possible amount of heat lost
-                    // const step = if (curr_count == 0) min else 1;
-                    // // const step = if (curr_count < min) min - curr_count + 1 else min;
-                    // const next_addr = addr.moveTo(dir, step, height, width) orelse continue;
-                    // // const cost = blocks[next_addr.row][next_addr.col];
-                    // const cost = calculateCostBetween(addr, next_addr);
-                    // std.debug.assert(cost >= 1 and cost <= step * 9);
-                    // const tentative_heat_lost = state.heat_lost + cost;
-                    // const count = if (dir == curr_dir) @max(curr_count, step) + 1 else 1;
-
-                    // // if we didn't visit this edge before or if we found a better way there
-                    // const edge = Edge{ .addr = next_addr, .dir = dir, .count = count };
-                    // const lookup = try visited.getOrPut(edge);
-                    // if (!lookup.found_existing or tentative_heat_lost < lookup.value_ptr.*) {
-                    //     // update the edge heat lost
-                    //     lookup.value_ptr.* = tentative_heat_lost;
-
-                    //     // and plan more routes to explore the rest of the city blocks
-                    //     try queue.add(.{
-                    //         .edge = edge,
-                    //         .heat_lost = tentative_heat_lost,
-                    //         .heuristic = manhattan(next_addr, goal),
-                    //     });
-                    // }
                 }
-            } else min_heat_loss;
+            } else @panic("cannot find a path to reach the goal");
         }
 
         fn manhattan(a: BlockAddress, b: BlockAddress) u16 {
