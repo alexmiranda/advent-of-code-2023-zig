@@ -15,6 +15,7 @@ pub const day14 = @import("day14/main.zig");
 pub const day15 = @import("day15/main.zig");
 pub const day16 = @import("day16/main.zig");
 pub const day17 = @import("day17/main.zig");
+pub const day18 = @import("day18/main.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
