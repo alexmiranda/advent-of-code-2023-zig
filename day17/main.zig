@@ -67,27 +67,7 @@ fn lessThan(ctx: void, lhs: State, rhs: State) Order {
 
 const PriorityQueue = std.PriorityQueue(State, void, lessThan);
 
-const EdgeContext = struct {
-    pub fn hash(ctx: @This(), edge: Edge) u64 {
-        _ = ctx;
-        var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(&mem.toBytes(edge.addr.row));
-        hasher.update(&mem.toBytes(edge.addr.col));
-        hasher.update(&mem.toBytes(@intFromEnum(edge.dir)));
-        hasher.update(&mem.toBytes(edge.count));
-        return hasher.final();
-    }
-
-    pub fn eql(ctx: @This(), lhs: Edge, rhs: Edge) bool {
-        _ = ctx;
-        return lhs.addr.row == rhs.addr.row and
-            lhs.addr.col == rhs.addr.col and
-            lhs.dir == rhs.dir and
-            lhs.count == rhs.count;
-    }
-};
-
-const HeatLossMap = std.HashMap(Edge, u32, EdgeContext, std.hash_map.default_max_load_percentage);
+const HeatLossMap = std.AutoHashMap(Edge, u32);
 
 fn CityMap(buffer: []const u8) type {
     const width = comptime mem.indexOfScalar(u8, buffer, '\n').?;
