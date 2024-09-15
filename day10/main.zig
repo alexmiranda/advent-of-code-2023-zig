@@ -130,24 +130,7 @@ const Coord = struct {
     }
 };
 
-const CoordContext = struct {
-    width: usize,
-    const Self = @This();
-
-    pub fn hash(ctx: Self, key: Coord) u64 {
-        // using a simple hash based on the coordinate indexes
-        // so that we have a nice distributivity and cheap hash
-        const h: u64 = @bitCast(key.y * ctx.width + key.x);
-        return h;
-    }
-
-    pub fn eql(ctx: Self, lhs: Coord, rhs: Coord) bool {
-        _ = ctx;
-        return lhs.eql(rhs);
-    }
-};
-
-const CoordSet = std.HashMap(Coord, void, CoordContext, std.hash_map.default_max_load_percentage);
+const CoordSet = std.AutoHashMap(Coord, void);
 
 const Loop = struct {
     len: usize = 0,
@@ -272,7 +255,7 @@ const Maze = struct {
         // to make sure there actually is a loop
         inline for (navigable_tiles) |assumed_start_tile| {
             // print("==== {} ====\n", .{assumed_start_tile});
-            var set = CoordSet.initContext(self.allocator, .{ .width = self.width });
+            var set = CoordSet.init(self.allocator);
             errdefer set.deinit();
 
             try set.put(self.start, {});
