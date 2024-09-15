@@ -35,22 +35,7 @@ const CacheKey = struct {
     counts_left: usize,
 };
 
-const CacheKeyContext = struct {
-    pub fn hash(ctx: @This(), key: CacheKey) u64 {
-        _ = ctx;
-        var h = std.hash.Fnv1a_64.init();
-        h.update(&std.mem.toBytes(key.springs_left));
-        h.update(&std.mem.toBytes(key.counts_left));
-        return h.final();
-    }
-
-    pub fn eql(ctx: @This(), lhs: CacheKey, rhs: CacheKey) bool {
-        _ = ctx;
-        return lhs.springs_left == rhs.springs_left and lhs.counts_left == rhs.counts_left;
-    }
-};
-
-const Cache = std.HashMap(CacheKey, u64, CacheKeyContext, std.hash_map.default_max_load_percentage);
+const Cache = std.AutoHashMap(CacheKey, u64);
 
 const Record = struct {
     allocator: mem.Allocator,
