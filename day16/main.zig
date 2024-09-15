@@ -148,7 +148,7 @@ fn Contraption(comptime size: u8) type {
             var queue = std.ArrayList(Bean).init(allocator);
             defer queue.deinit();
 
-            var energised = std.HashMap(Coord, Direction, EnergisedContext, std.hash_map.default_max_load_percentage).init(allocator);
+            var energised = std.AutoHashMap(Coord, Direction).init(allocator);
             defer energised.deinit();
 
             // start with a single bean in the top-left corner moving right
@@ -177,18 +177,6 @@ fn Contraption(comptime size: u8) type {
 
             return energised.count();
         }
-
-        const EnergisedContext = struct {
-            pub fn hash(ctx: @This(), coord: Coord) u64 {
-                _ = ctx;
-                return coord.row * size + coord.col;
-            }
-
-            pub fn eql(ctx: @This(), lhs: Coord, rhs: Coord) bool {
-                _ = ctx;
-                return lhs.row == rhs.row and lhs.col == rhs.col;
-            }
-        };
     };
 }
 
