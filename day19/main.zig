@@ -135,22 +135,23 @@ const System = struct {
         return sum;
     }
 
-    // compute all the possible combinations of parts where each
-    // individual category has values in the range 1...4000
+    // compute all possible combinations of parts where each individual category has values in the range 1...4000
     fn computeAllCombinations(self: *System) !u64 {
         var stack = PredicateStack.init(self.allocator);
         defer stack.deinit();
         return try self.countCombinations("in", &stack);
     }
 
-    // recursively count all combinations of accepted parts in the implicit range 0...4000
+    // recursively count all combinations of accepted parts in the implicit range 1...4000
     fn countCombinations(self: *System, wf_name: []const u8, stack: *PredicateStack) !u64 {
         var sum_combinations: u64 = 0;
         const workflow = self.workflows.get(wf_name).?;
         for (workflow.rules) |rule| {
             var is_constrained = false;
+            // determine the type of result associated with the rule
             const res = switch (rule) {
                 .constrained => |constraint| blk: {
+                    // append the rule to the stack so it's evaluated later
                     try stack.append(constraint.pred);
                     is_constrained = true;
                     break :blk constraint.res;
@@ -159,15 +160,24 @@ const System = struct {
             };
             switch (res) {
                 .eval => |next_wf_name| {
+                    // recurse upon encountering a rule to eval another workflow
+                    // ensure that when it's returned to the call point, we pop off any extra predicates
                     const stack_size = stack.items.len;
                     defer stack.shrinkRetainingCapacity(stack_size);
                     sum_combinations += try self.countCombinations(next_wf_name, stack);
                 },
                 .accepted => {
+                    // if we encountered an accepted rule, then we check in the predicates stack
+                    // how many combinations we could get in total and add to the results
                     sum_combinations += countRangesIn(stack.items);
                 },
-                .rejected => {},
+                .rejected => {
+                    // if we encountered an unconstrained rejected rule, then there's no point continuing
+                    if (!is_constrained) break;
+                },
             }
+
+            // if the last rule had a predicate, we need to negate it and proceed with the search
             if (is_constrained) {
                 const pred = stack.pop();
                 try stack.append(pred.neg());
