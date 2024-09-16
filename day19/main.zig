@@ -49,16 +49,13 @@ const Predicate = struct {
 
     fn eval(self: Predicate, part: Part) bool {
         const n = switch (self.field) {
-            'x' => part.x,
-            'm' => part.m,
-            'a' => part.a,
-            's' => part.s,
+            inline 'x', 'm', 'a', 's' => |c| @field(part, &[_]u8{c}),
             else => unreachable,
         };
         return self.cond.eval(n);
     }
 
-    fn inv(self: Predicate) Predicate {
+    fn neg(self: Predicate) Predicate {
         return switch (self.cond) {
             .lt => |val| .{ .field = self.field, .cond = .{ .gt = val - 1 } },
             .gt => |val| .{ .field = self.field, .cond = .{ .lt = val + 1 } },
@@ -173,7 +170,7 @@ const System = struct {
             }
             if (is_constrained) {
                 const pred = stack.pop();
-                try stack.append(pred.inv());
+                try stack.append(pred.neg());
             }
         }
         return sum_combinations;
@@ -294,10 +291,7 @@ const System = struct {
         while (it.next()) |field_name| {
             const val = try fmt.parseInt(u16, it.next().?, 10);
             switch (field_name[0]) {
-                'x' => part.x = val,
-                'm' => part.m = val,
-                'a' => part.a = val,
-                's' => part.s = val,
+                inline 'x', 'm', 'a', 's' => |c| @field(part, &[_]u8{c}) = val,
                 else => unreachable,
             }
         }
