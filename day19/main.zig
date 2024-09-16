@@ -1,9 +1,13 @@
 const std = @import("std");
+const heap = std.heap;
 const mem = std.mem;
 const fmt = std.fmt;
 const testing = std.testing;
+const math = std.math;
+const Order = std.math.Order;
 const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
+const assert = std.debug.assert;
 const example = @embedFile("example.txt");
 const input = @embedFile("input.txt");
 
@@ -23,18 +27,41 @@ const Cond = union(enum) {
     lt: u16,
     gt: u16,
 
-    fn fromChar(c: u8) Cond {
+    fn fromChar(c: u8, val: u16) Cond {
         return switch (c) {
-            '<' => .lt,
-            '>' => .gt,
+            '<' => .{ .lt = val },
+            '>' => .{ .gt = val },
             else => undefined,
         };
     }
 
-    fn eval(self: Cond, val: u16) bool {
+    fn eval(self: Cond, n: u16) bool {
         return switch (self) {
-            .lt => |n| val < n,
-            .gt => |n| val > n,
+            .lt => |val| n < val,
+            .gt => |val| n > val,
+        };
+    }
+};
+
+const Predicate = struct {
+    field: u8,
+    cond: Cond,
+
+    fn eval(self: Predicate, part: Part) bool {
+        const n = switch (self.field) {
+            'x' => part.x,
+            'm' => part.m,
+            'a' => part.a,
+            's' => part.s,
+            else => unreachable,
+        };
+        return self.cond.eval(n);
+    }
+
+    fn inv(self: Predicate) Predicate {
+        return switch (self.cond) {
+            .lt => |val| .{ .field = self.field, .cond = .{ .gt = val - 1 } },
+            .gt => |val| .{ .field = self.field, .cond = .{ .lt = val + 1 } },
         };
     }
 };
@@ -46,8 +73,8 @@ const Result = union(enum) {
 };
 
 const Rule = union(enum) {
-    pred: struct { field: u8, cond: Cond, res: Result },
     immediate: Result,
+    constrained: struct { pred: Predicate, res: Result },
 };
 
 const Workflow = struct {
@@ -55,7 +82,10 @@ const Workflow = struct {
 };
 
 const WorkflowMap = std.StringHashMap(Workflow);
+
 const PartList = std.ArrayList(Part);
+
+const PredicateStack = std.ArrayList(Predicate);
 
 const System = struct {
     allocator: mem.Allocator,
@@ -69,6 +99,7 @@ const System = struct {
         var workflows = WorkflowMap.init(allocator);
         errdefer workflows.deinit();
         while (it.next()) |line| {
+            // break if we find an empty line
             if (line.len == 0) break;
             try addWorkflow(allocator, &workflows, line);
         }
@@ -89,6 +120,7 @@ const System = struct {
     }
 
     fn deinit(self: *System) void {
+        // need to clean up every rules array of every workflow
         var it = self.workflows.valueIterator();
         while (it.next()) |wf| {
             self.allocator.free(wf.rules);
@@ -97,6 +129,7 @@ const System = struct {
         self.allocator.free(self.parts);
     }
 
+    // sum the ratings of parts which are accepted
     fn execute(self: *System) u32 {
         var sum: u32 = 0;
         for (self.parts) |part| {
@@ -105,33 +138,112 @@ const System = struct {
         return sum;
     }
 
+    // compute all the possible combinations of parts where each
+    // individual category has values in the range 1...4000
+    fn computeAllCombinations(self: *System) !u64 {
+        var stack = PredicateStack.init(self.allocator);
+        defer stack.deinit();
+        return try self.countCombinations("in", &stack);
+    }
+
+    // recursively count all combinations of accepted parts in the implicit range 0...4000
+    fn countCombinations(self: *System, wf_name: []const u8, stack: *PredicateStack) !u64 {
+        var sum_combinations: u64 = 0;
+        const workflow = self.workflows.get(wf_name).?;
+        for (workflow.rules) |rule| {
+            var is_constrained = false;
+            const res = switch (rule) {
+                .constrained => |constraint| blk: {
+                    try stack.append(constraint.pred);
+                    is_constrained = true;
+                    break :blk constraint.res;
+                },
+                .immediate => |res| res,
+            };
+            switch (res) {
+                .eval => |next_wf_name| {
+                    const stack_size = stack.items.len;
+                    defer stack.shrinkRetainingCapacity(stack_size);
+                    sum_combinations += try self.countCombinations(next_wf_name, stack);
+                },
+                .accepted => {
+                    sum_combinations += countRangesIn(stack.items);
+                },
+                .rejected => {},
+            }
+            if (is_constrained) {
+                const pred = stack.pop();
+                try stack.append(pred.inv());
+            }
+        }
+        return sum_combinations;
+    }
+
+    // calculate the product of all categories which pass all of the predicates
+    fn countRangesIn(predicates: []Predicate) u64 {
+        const Range = struct { start: u64, end: u64 };
+        var xr = Range{ .start = 1, .end = 4000 };
+        var mr = Range{ .start = 1, .end = 4000 };
+        var ar = Range{ .start = 1, .end = 4000 };
+        var sr = Range{ .start = 1, .end = 4000 };
+
+        // evaluate each predicate and narrow the appropriate range
+        for (predicates) |pred| {
+            var range = switch (pred.field) {
+                'x' => &xr,
+                'm' => &mr,
+                'a' => &ar,
+                's' => &sr,
+                else => unreachable,
+            };
+            switch (pred.cond) {
+                .lt => |val| {
+                    if (val > range.start and val <= range.end) {
+                        range.end = val - 1;
+                    } else {
+                        // we found a predicate that results in an empty range
+                        return 0;
+                    }
+                },
+                .gt => |val| {
+                    if (val >= range.start and val < range.end) {
+                        range.start = val + 1;
+                    } else {
+                        // we found a predicate that results in an empty range
+                        return 0;
+                    }
+                },
+            }
+            // printPredicate(pred);
+            // print(" => {any}\n", .{range});
+        }
+        return (xr.end - xr.start + 1) *
+            (mr.end - mr.start + 1) *
+            (ar.end - ar.start + 1) *
+            (sr.end - sr.start + 1);
+    }
+
+    // evaluate the workflow rules for a given part
     fn isAccepted(self: *System, part: Part, wf_name: []const u8) bool {
         const workflow = self.workflows.get(wf_name).?;
         for (workflow.rules) |rule| {
-            switch (rule) {
-                .immediate => |res| {
-                    return switch (res) {
-                        .accepted => true,
-                        .rejected => false,
-                        .eval => |wf| self.isAccepted(part, wf),
-                    };
-                },
-                .pred => |predicate| {
-                    const val = switch (predicate.field) {
-                        'x' => part.x,
-                        'm' => part.m,
-                        'a' => part.a,
-                        's' => part.s,
-                        else => unreachable,
-                    };
-                    if (predicate.cond.eval(val)) {
-                        return switch (predicate.res) {
-                            .accepted => true,
-                            .rejected => false,
-                            .eval => |wf| self.isAccepted(part, wf),
-                        };
+            // get the result only if the predicate condition passes
+            const result = switch (rule) {
+                .immediate => |res| res,
+                .constrained => |constraint| blk: {
+                    if (constraint.pred.eval(part)) {
+                        break :blk constraint.res;
                     }
+                    break :blk null;
                 },
+            };
+            if (result) |res| {
+                return switch (res) {
+                    .accepted => true,
+                    .rejected => false,
+                    // evaluate the next workflow
+                    .eval => |wf| self.isAccepted(part, wf),
+                };
             }
         }
         @panic("at least one rule must match!");
@@ -146,25 +258,27 @@ const System = struct {
             defer rules.deinit();
             while (it.next()) |token| {
                 switch (token[0]) {
+                    // conditionless accepted
                     'A' => try rules.append(.{ .immediate = .{ .accepted = {} } }),
+                    // conditionless rejected
                     'R' => try rules.append(.{ .immediate = .{ .rejected = {} } }),
                     else => {
-                        if (mem.indexOfAny(u8, token, "<>")) |op_pos| {
-                            const field = token[0];
-                            const colon_pos = mem.indexOfScalarPos(u8, token, op_pos + 2, ':').?;
-                            const val = try fmt.parseInt(u16, token[op_pos + 1 .. colon_pos], 10);
-                            const cond = switch (token[op_pos]) {
-                                '<' => Cond{ .lt = val },
-                                '>' => Cond{ .gt = val },
-                                else => unreachable,
-                            };
-                            switch (token[colon_pos + 1]) {
-                                'A' => try rules.append(.{ .pred = .{ .field = field, .cond = cond, .res = .{ .accepted = {} } } }),
-                                'R' => try rules.append(.{ .pred = .{ .field = field, .cond = cond, .res = .{ .rejected = {} } } }),
-                                else => try rules.append(.{ .pred = .{ .field = field, .cond = cond, .res = .{ .eval = token[colon_pos + 1 ..] } } }),
-                            }
-                        } else {
+                        // conditionless deferred to another workflow evaluation
+                        if (token[1] != '<' and token[1] != '>') {
                             try rules.append(.{ .immediate = .{ .eval = token } });
+                            continue;
+                        }
+
+                        // rule with a predicate
+                        const field = token[0];
+                        const sep = mem.indexOfScalarPos(u8, token, 3, ':').?;
+                        const val = try fmt.parseInt(u16, token[2..sep], 10);
+                        const cond = Cond.fromChar(token[1], val);
+                        const pred = Predicate{ .field = field, .cond = cond };
+                        switch (token[sep + 1]) {
+                            'A' => try rules.append(.{ .constrained = .{ .pred = pred, .res = .{ .accepted = {} } } }),
+                            'R' => try rules.append(.{ .constrained = .{ .pred = pred, .res = .{ .rejected = {} } } }),
+                            else => try rules.append(.{ .constrained = .{ .pred = pred, .res = .{ .eval = token[sep + 1 ..] } } }),
                         }
                     },
                 }
@@ -191,29 +305,34 @@ const System = struct {
     }
 
     // unused
+    fn printPredicate(pred: Predicate) void {
+        switch (pred.cond) {
+            .lt => |val| print("{c}<{d}", .{ pred.field, val }),
+            .gt => |val| print("{c}>{d}", .{ pred.field, val }),
+        }
+    }
+
+    // unused
     fn dump(self: *System) void {
+        const F = struct {
+            fn printResult(res: Result) void {
+                switch (res) {
+                    .accepted => print("A", .{}),
+                    .rejected => print("R", .{}),
+                    .eval => |val| print("{s}", .{val}),
+                }
+            }
+        };
         var it = self.workflows.iterator();
         while (it.next()) |entry| {
             print("{s}{{", .{entry.key_ptr.*});
             for (entry.value_ptr.*.rules, 0..) |rule, i| {
                 switch (rule) {
-                    .immediate => |res| {
-                        switch (res) {
-                            .accepted => print("A", .{}),
-                            .rejected => print("R", .{}),
-                            .eval => |val| print("{s}", .{val}),
-                        }
-                    },
-                    .pred => |pred| {
-                        switch (pred.cond) {
-                            .lt => |val| print("{c}<{d}:", .{ pred.field, val }),
-                            .gt => |val| print("{c}>{d}:", .{ pred.field, val }),
-                        }
-                        switch (pred.res) {
-                            .accepted => print("A", .{}),
-                            .rejected => print("R", .{}),
-                            .eval => |val| print("{s}", .{val}),
-                        }
+                    .immediate => |res| F.printResult(res),
+                    .constrained => |constraint| {
+                        printPredicate(constraint.pred);
+                        print(":", .{});
+                        F.printResult(constraint.res);
                     },
                 }
                 if (i < entry.value_ptr.*.rules.len - 1) print(",", .{}) else print("}}\n", .{});
@@ -238,4 +357,18 @@ test "input - part 1" {
     defer system.deinit();
     const total_ratings = system.execute();
     try expectEqual(476889, total_ratings);
+}
+
+test "example - part 2" {
+    var system = try System.initParse(testing.allocator, example);
+    defer system.deinit();
+    const combinations = try system.computeAllCombinations();
+    try expectEqual(167_409_079_868_000, combinations);
+}
+
+test "input - part 2" {
+    var system = try System.initParse(testing.allocator, input);
+    defer system.deinit();
+    const combinations = try system.computeAllCombinations();
+    try expectEqual(132380153677887, combinations);
 }
