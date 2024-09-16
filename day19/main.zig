@@ -247,6 +247,9 @@ const System = struct {
     }
 
     fn addWorkflow(allocator: mem.Allocator, workflows: *WorkflowMap, line: []const u8) !void {
+        // ensure that we have capacity to store at least one workflow so that we don't need an errdefer
+        // after creating a slice of rules
+        try workflows.ensureUnusedCapacity(1);
         const bracket_pos = mem.indexOfScalar(u8, line, '{').?;
         const wf_name = line[0..bracket_pos];
         var it = mem.tokenizeScalar(u8, line[bracket_pos + 1 .. line.len - 1], ',');
@@ -282,7 +285,7 @@ const System = struct {
             }
             break :blk try rules.toOwnedSlice();
         };
-        try workflows.put(wf_name, .{ .rules = rules });
+        workflows.putAssumeCapacity(wf_name, .{ .rules = rules });
     }
 
     fn addPart(parts: *PartList, line: []const u8) !void {
