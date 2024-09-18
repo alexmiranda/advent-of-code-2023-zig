@@ -63,7 +63,6 @@ const Farm = struct {
             slide += 1;
         }
 
-        // print("start_pos: {any}\n", .{start_pos});
         return Farm{ .ally = ally, .data = data, .tiles = tiles, .start_pos = start_pos };
     }
 
@@ -73,29 +72,33 @@ const Farm = struct {
     }
 
     fn reachablePlots(self: *Farm, turns: u8) !u32 {
-        var arena = heap.ArenaAllocator.init(self.ally);
-        defer arena.deinit();
-        const ally = arena.allocator();
+        const ally = self.ally;
 
+        // keep track of the visited tiles
         var visited = std.AutoHashMap(Pos, void).init(ally);
         defer visited.deinit();
 
+        // ensure we have enough capacity for at least one node
+        // so we don't cause a double free if it fails inside of the loop
+        try visited.ensureUnusedCapacity(1);
+
         const Q = std.TailQueue(Pos);
         var queue = Q{};
+        // ensure we clean up the queue at the end
+        defer while (queue.pop()) |item| ally.destroy(item);
+
         var node = try ally.create(Q.Node);
-        // this could cause a double free
+        // we already ensure that every node will be destroyed before exiting
         // errdefer ally.destroy(node);
         node.data = self.start_pos;
 
         var buf: [4]Pos = undefined;
         queue.append(node);
-
-        // ensure we clean up the queue at the end
-        defer while (queue.pop()) |item| ally.destroy(item);
-
         for (0..turns) |_| {
             visited.clearRetainingCapacity();
-            try visited.put(self.start_pos, {});
+            visited.putAssumeCapacity(self.start_pos, {});
+            // we pop the first items that are already in the queue
+            // leaving the ones being added by each iteration untouched
             for (0..queue.len) |_| {
                 node = queue.popFirst().?;
                 defer ally.destroy(node);
@@ -113,31 +116,32 @@ const Farm = struct {
             }
         }
 
-        // self.dumpVisited(&visited);
         return visited.count();
     }
 
     fn reachablePlotsInfinite(self: *Farm, turns: u32) !u32 {
-        var arena = heap.ArenaAllocator.init(self.ally);
-        defer arena.deinit();
-        const ally = arena.allocator();
+        const ally = self.ally;
 
+        // keep track of the visited tiles
         var visited = std.AutoHashMap(Pos, void).init(ally);
         defer visited.deinit();
 
+        // ensure we have enough capacity for at least one node
+        // so we don't cause a double free (the head node created outside the loop)
+        // if it fails inside of the loop
+        try visited.ensureUnusedCapacity(1);
+
         const Q = std.TailQueue(Pos);
         var queue = Q{};
-        var node = try ally.create(Q.Node);
-        // this could cause a double free
-        // errdefer ally.destroy(node);
-        node.data = self.start_pos;
-
-        var buf: [4]Pos = undefined;
-        queue.append(node);
 
         // ensure we clean up the queue at the end
         defer while (queue.pop()) |item| ally.destroy(item);
 
+        var node = try ally.create(Q.Node);
+        node.data = self.start_pos;
+
+        var buf: [4]Pos = undefined;
+        queue.append(node);
         for (0..turns) |_| {
             visited.clearRetainingCapacity();
             try visited.put(self.start_pos, {});
@@ -158,7 +162,6 @@ const Farm = struct {
             }
         }
 
-        // self.dumpVisited(&visited);
         return visited.count();
     }
 
@@ -186,6 +189,7 @@ const Farm = struct {
     }
 
     fn neighboursInfinite(self: *Farm, pos: Pos, buf: []Pos) []Pos {
+        // calculate the neighbours positions all at once (if SIMD is available)
         const vec_curr_pos: @Vector(8, i64) = [_]i64{ pos.row, pos.col } ** 4;
         const vec_delta: @Vector(8, i64) = [_]i64{ -1, 0, 0, 1, 1, 0, 0, -1 };
         const positions = @as([8]i64, vec_curr_pos + vec_delta);
@@ -204,13 +208,13 @@ const Farm = struct {
         return buf[0..slide];
     }
 
+    // unused
     fn dump(self: Farm) void {
         for (0..self.tiles.len) |row| {
             for (0..self.tiles[row].len) |col| {
                 const c: u8 = switch (self.tiles[row][col]) {
                     .garden_plot => '.',
                     .rocks => '#',
-                    .starting_position => 'S',
                 };
                 print("{c}", .{c});
             }
@@ -218,13 +222,13 @@ const Farm = struct {
         }
     }
 
+    // unused
     fn dumpVisited(self: Farm, visited: *std.AutoHashMap(Pos, void)) void {
         for (0..self.tiles.len) |row| {
             for (0..self.tiles[row].len) |col| {
                 const c: u8 = switch (self.tiles[row][col]) {
                     .garden_plot => if (visited.contains(.{ .row = row, .col = col })) 'O' else '.',
                     .rocks => '#',
-                    .starting_position => 'O',
                 };
                 print("{c}", .{c});
             }
