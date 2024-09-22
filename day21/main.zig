@@ -5,6 +5,7 @@ const math = std.math;
 const testing = std.testing;
 const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
+const assert = std.debug.assert;
 const example = @embedFile("example.txt");
 const input = @embedFile("input.txt");
 
@@ -119,50 +120,55 @@ const Farm = struct {
         return visited.count();
     }
 
-    fn reachablePlotsInfinite(self: *Farm, turns: u32) !u32 {
-        const ally = self.ally;
+    fn reachablePlotsInfinite(self: *Farm, turns: u32) !u64 {
+        // HACK: brute force if working with the example data
+        const brute_force = self.data.len <= example.len;
 
-        // keep track of the visited tiles
-        var visited = std.AutoHashMap(Pos, void).init(ally);
+        // validate assumptions
+        if (!brute_force) self.checkAssumptions(turns);
+
+        const size: u32 = @intCast(self.tiles.len);
+        const Set = std.AutoHashMap(Pos, void);
+        var visited = Set.init(self.ally);
         defer visited.deinit();
+        try visited.put(self.start_pos, {});
 
-        // ensure we have enough capacity for at least one node
-        // so we don't cause a double free (the head node created outside the loop)
-        // if it fails inside of the loop
-        try visited.ensureUnusedCapacity(1);
+        var next_visited = Set.init(self.ally);
+        defer next_visited.deinit();
 
-        const Q = std.TailQueue(Pos);
-        var queue = Q{};
-
-        // ensure we clean up the queue at the end
-        defer while (queue.pop()) |item| ally.destroy(item);
-
-        var node = try ally.create(Q.Node);
-        node.data = self.start_pos;
-
+        var counts: [3]i64 = undefined;
+        var deltas = [_]i64{0} ** counts.len;
         var buf: [4]Pos = undefined;
-        queue.append(node);
-        for (0..turns) |_| {
-            visited.clearRetainingCapacity();
-            try visited.put(self.start_pos, {});
-            for (0..queue.len) |_| {
-                node = queue.popFirst().?;
-                defer ally.destroy(node);
-
-                const next_positions = self.neighboursInfinite(node.data, &buf);
-                for (next_positions) |pos| {
-                    const gop = try visited.getOrPut(pos);
-                    if (!gop.found_existing) {
-                        const new_node = try ally.create(Q.Node);
-                        errdefer ally.destroy(new_node);
-                        new_node.data = pos;
-                        queue.append(new_node);
-                    }
-                }
+        var slide: usize = 0;
+        const rem = turns % size;
+        for (1..turns + 1) |i| {
+            if (slide == counts.len) break;
+            next_visited.clearRetainingCapacity();
+            var it = visited.keyIterator();
+            while (it.next()) |pos| {
+                const adjacent_positions = self.neighboursInfinite(pos.*, &buf);
+                for (adjacent_positions) |next_pos| try next_visited.put(next_pos, {});
             }
-        }
 
-        return visited.count();
+            if (!brute_force and i >= rem and (i - rem) % size == 0) {
+                const count: i64 = @intCast(next_visited.count());
+                counts[slide] = count;
+                const delta = count - counts[slide -| 1];
+                deltas[slide] = delta;
+                slide += 1;
+                // print("i={d} counts={d} deltas={d} 2nd differential: {d}\n", .{ i, counts[0..slide], deltas[1..slide], deltas[slide - 1] - deltas[slide -| 2] });
+            }
+
+            mem.swap(Set, &visited, &next_visited);
+        } else return visited.count();
+
+        // print("counts: {d}\n", .{counts});
+        // print("deltas: {d}\n", .{deltas});
+        const a = @divFloor(deltas[2] - deltas[1], 2);
+        const b = deltas[1] - 3 * a;
+        const c = counts[0] - a - b;
+        const n: i64 = @intCast(1 + turns / size);
+        return @abs(a * n * n + b * n + c);
     }
 
     fn neighbours(self: *Farm, pos: Pos, buf: []Pos) []Pos {
@@ -206,6 +212,45 @@ const Farm = struct {
             }
         }
         return buf[0..slide];
+    }
+
+    fn checkAssumptions(self: *Farm, turns: u32) void {
+        const size: u32 = @intCast(self.tiles.len);
+        const start_pos = self.start_pos;
+        const dist_to_edge = size - @as(usize, @intCast(start_pos.col));
+        const row: usize = @intCast(start_pos.row);
+        const col: usize = @intCast(start_pos.col);
+
+        // grid is a square of odd size and the starting position is at the perfect centre
+        assert(row == col);
+        assert(size % 2 == 1);
+        assert(col % 2 == 1);
+        assert(turns % size == dist_to_edge - 1);
+        for (1..dist_to_edge) |i| {
+            // only garden plots in the middle column
+            assert(self.tiles[row - i][col] == .garden_plot);
+            assert(self.tiles[row + i][col] == .garden_plot);
+
+            // only garden in the middle row
+            assert(self.tiles[row][col - i] == .garden_plot);
+            assert(self.tiles[row][col + i] == .garden_plot);
+
+            // only garden plots in the top edge
+            assert(self.tiles[0][i] == .garden_plot);
+            assert(self.tiles[0][size - i - 1] == .garden_plot);
+
+            // only garden plots in the right edge
+            assert(self.tiles[row - i][size - 1] == .garden_plot);
+            assert(self.tiles[row + i][size - 1] == .garden_plot);
+
+            // only garden plots in the bottom edge
+            assert(self.tiles[size - 1][col - i] == .garden_plot);
+            assert(self.tiles[size - 1][col + i] == .garden_plot);
+
+            // only garden plots in the left edge
+            assert(self.tiles[row - i][0] == .garden_plot);
+            assert(self.tiles[row + i][0] == .garden_plot);
+        }
     }
 
     // unused
@@ -252,7 +297,10 @@ test "input - part 1" {
 }
 
 test "example - part 2" {
-    var farm = try Farm.initParse(testing.allocator, example);
+    var logging_ally = heap.LoggingAllocator(.debug, .debug).init(testing.allocator);
+    const ally = logging_ally.allocator();
+
+    var farm = try Farm.initParse(ally, example);
     defer farm.deinit();
 
     {
@@ -291,4 +339,14 @@ test "example - part 2" {
     //     const reachable = try farm.reachablePlotsInfinite(5000);
     //     try expectEqual(16733044, reachable);
     // }
+}
+
+test "input - part 2" {
+    var logging_ally = heap.LoggingAllocator(.debug, .debug).init(testing.allocator);
+    const ally = logging_ally.allocator();
+    var farm = try Farm.initParse(ally, input);
+    defer farm.deinit();
+    assert(farm.tiles.len == 131);
+    const reachable = try farm.reachablePlotsInfinite(26_501_365);
+    try expectEqual(625382480005896, reachable);
 }
